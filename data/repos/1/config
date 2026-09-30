@@ -1,0 +1,8 @@
+[core]
+	bare = true
+[remote "origin"]
+	url = https://github.com/nayyykettt/posmotri-v-okno
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main

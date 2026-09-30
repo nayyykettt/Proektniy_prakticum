@@ -1,0 +1,55 @@
+{{define "logo"}}<svg class="logo" width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="25" fill="none" stroke="currentColor" stroke-opacity="0.35"/><polyline points="3,15 8,15 10.5,8 13.5,20 16,11 18,15 23,15" fill="none" stroke="#E4572E" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>{{end}}
+{{define "syncIcon"}}<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>{{end}}
+{{define "accentSwitch"}}<div class="accent-switch" role="group" aria-label="Цвет интерфейса">
+  <span class="accent-label">Цвет</span>
+  {{range accents}}<button type="button" class="accent-dot accent-{{.ID}}" data-accent-pick="{{.ID}}" aria-label="{{.Name}}" title="{{.Name}}" aria-pressed="{{if eq .ID $.Accent}}true{{else}}false{{end}}"></button>{{end}}
+</div>{{end}}
+{{define "layout"}}<!doctype html>
+<html lang="ru" data-accent="{{.Accent}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{if .Refresh}}<meta http-equiv="refresh" content="5">{{end}}
+<title>{{.Title}} · TeamPulse</title>
+<link rel="icon" href="{{asset "favicon.svg"}}" type="image/svg+xml">
+<link rel="preload" href="/static/fonts/golos-cyr.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/spectral-300-cyr.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{asset "app.css"}}">
+<script src="{{asset "theme.js"}}" defer></script>
+</head>
+<body>
+{{if .User.ID}}
+<header class="topbar">
+  <a class="brand" href="/">{{template "logo"}} TeamPulse</a>
+  {{with .Project}}
+  <nav class="tabs" aria-label="Разделы проекта">
+    <span class="crumb">{{.Name}}</span>
+    <a href="/projects/{{.ID}}" {{if eq $.Tab "dashboard"}}aria-current="page"{{end}}>Дашборд</a>
+    <a href="/projects/{{.ID}}/reports" {{if eq $.Tab "reports"}}aria-current="page"{{end}}>Отчёты</a>
+    <a href="/projects/{{.ID}}/settings" {{if eq $.Tab "settings"}}aria-current="page"{{end}}>Настройки</a>
+  </nav>
+  {{end}}
+  <div class="user">
+    {{template "accentSwitch" .}}
+    <span class="user-login" title="Вы вошли как {{.User.Login}}">{{.User.Login}}</span>
+    <form method="post" action="/logout"><button class="btn-ghost-dark">Выйти</button></form>
+  </div>
+</header>
+{{end}}
+{{if .User.ID}}
+<main class="page">
+  {{with .Flash}}<div class="alert ok" role="status">{{.}}</div>{{end}}
+  {{with .Error}}<div class="alert err" role="alert">{{.}}</div>{{end}}
+  {{template "content" .}}
+</main>
+{{else}}
+<main class="bare">{{template "content" .}}</main>
+{{end}}
+{{if .User.ID}}
+<footer class="footer">
+  <span>TeamPulse — автоматическая оценка эффективности команд разработки</span>
+  <span>метрики · 22</span>
+</footer>
+{{end}}
+</body>
+</html>{{end}}

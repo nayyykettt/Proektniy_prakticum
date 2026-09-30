@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отчёт TeamPulse — {{.Project.Name}}</title>
+<style>
+  :root { --fg:#1b1f24; --muted:#5b6470; --line:#dde1e6; --bg:#fff; --accent:#2f5bea; --good:#1a7f37; --bad:#c62828; --warn:#b26a00; }
+  * { box-sizing: border-box; }
+  body { font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 960px; padding: 32px 24px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .meta { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .02em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .improved { color: var(--good); } .worsened { color: var(--bad); } .stable, .changed, .no_data { color: var(--muted); }
+  .rec { padding: 8px 12px; border-left: 4px solid var(--line); margin: 8px 0; background: #f7f8fa; }
+  .rec.critical { border-color: var(--bad); } .rec.warning { border-color: var(--warn); } .rec.good { border-color: var(--good); } .rec.info { border-color: var(--accent); }
+  .rec b { display: block; }
+  svg text { font-size: 10px; fill: var(--muted); }
+  svg rect { fill: var(--accent); }
+  .note { color: var(--muted); font-size: 12px; margin-top: 32px; }
+  @media print { body { padding: 0; } h2 { break-after: avoid; } table, .rec { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<h1>Отчёт о производительности: {{.Project.Name}}</h1>
+<div class="meta">{{.Scope}} · период {{date .Period.From}} — {{lastDay .Period.To}} · сформирован {{datetime .GeneratedAt}}</div>
+
+<h2>Ключевые метрики</h2>
+<table>
+  <tr><th>Метрика</th><th class="n">Значение</th><th class="n">Прошлый период</th><th class="n">Изменение</th><th>Оценка</th></tr>
+  {{range .Trends}}{{if .Current}}
+  <tr><td>{{.Title}}</td><td class="n">{{num .Current}} {{.Unit}}</td><td class="n">{{num .Previous}}</td>
+      <td class="n {{.Verdict}}">{{delta .DeltaPct}}</td><td class="{{.Verdict}}">{{verdict .Verdict}}</td></tr>
+  {{end}}{{end}}
+</table>
+
+{{with .Recommendations}}
+<h2>Выводы и рекомендации</h2>
+{{range .}}<div class="rec {{.Severity}}"><b>{{severity .Severity}}: {{.Title}}</b>{{.Advice}}</div>{{end}}
+{{end}}
+
+<h2>Активность по неделям (коммиты)</h2>
+<svg viewBox="0 0 640 160" width="100%" role="img" aria-label="Коммиты по неделям">
+  {{range bars .Snapshot.Weekly}}
+  <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}"><title>{{.Label}}: {{.Value}}</title></rect>
+  <text x="{{.X}}" y="155">{{.Label}}</text>
+  {{end}}
+</svg>
+
+<h2>Вклад разработчиков</h2>
+<table>
+  <tr><th>Разработчик</th><th class="n">Коммиты</th><th class="n">Акт. дни</th><th class="n">Медиана коммита</th>
+      <th class="n">С тестами</th><th class="n">MR</th><th class="n">Lead time</th><th class="n">Ревью</th><th class="n">Задачи</th></tr>
+  {{range .Snapshot.Authors}}
+  <tr><td>{{.Name}}</td><td class="n">{{.Commits}}</td><td class="n">{{.ActiveDays}}</td><td class="n">{{num .MedianCommitSize}}</td>
+      <td class="n">{{pct .TestRatio}}</td><td class="n">{{.MRMerged}}</td><td class="n">{{hours .MRLeadTimeMedianH}}</td>
+      <td class="n">{{.ReviewsGiven}}</td><td class="n">{{.IssuesClosed}}</td></tr>
+  {{else}}<tr><td colspan="9">Нет активности за период</td></tr>{{end}}
+</table>
+
+{{with .Contribution.Scores}}
+<h2>Баллы Zerocracy</h2>
+<table>
+  <tr><th>Разработчик</th><th class="n">Баллы</th><th class="n">Доля</th><th>Из чего сложились</th></tr>
+  {{range .}}
+  <tr><td>{{.Name}}</td><td class="n">{{.Points}}</td><td class="n">{{.Share}}%</td>
+      <td>{{range $k, $v := .Breakdown}}{{kind $k}}: {{signed $v}}; {{end}}</td></tr>
+  {{end}}
+</table>
+{{end}}
+
+{{with .Snapshot.Hotspots}}
+<h2>Горячие точки кода</h2>
+<table>
+  <tr><th>Файл</th><th class="n">Изменений</th><th class="n">Строк</th><th class="n">Авторов</th></tr>
+  {{range .}}<tr><td>{{.Path}}</td><td class="n">{{.Changes}}</td><td class="n">{{.Churn}}</td><td class="n">{{.Authors}}</td></tr>{{end}}
+</table>
+{{end}}
+
+{{with .Snapshot.Ownership}}
+<h2>Владение кодом (bus factor = {{$.Snapshot.Summary.BusFactor}})</h2>
+<table>
+  <tr><th>Разработчик</th><th class="n">Файлов</th><th class="n">Доля</th></tr>
+  {{range .}}<tr><td>{{.Name}}</td><td class="n">{{.Files}}</td><td class="n">{{.Share}}%</td></tr>{{end}}
+</table>
+{{end}}
+
+{{with .Suggestions}}
+<h2>Распределение открытых задач</h2>
+<table>
+  <tr><th>Задача</th><th>Рекомендуемый исполнитель</th><th>Обоснование</th></tr>
+  {{range .}}{{$c := index .Candidates 0}}
+  <tr><td>#{{.IssueIID}} {{.Title}}</td><td>{{$c.Name}} ({{$c.Score}})</td><td>{{$c.Reason}}</td></tr>
+  {{end}}
+</table>
+{{end}}
+
+<p class="note">Методика: merge-коммиты, vendor/lock/сгенерированные файлы исключены; для длительностей используются медианы;
+строки кода не являются мерой продуктивности и приводятся только как контекст. Сравнение идёт с предыдущим периодом той же длины.
+Формулы всех метрик — в документации (docs/metrics.md).</p>
+</body>
+</html>

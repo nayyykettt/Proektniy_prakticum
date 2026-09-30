@@ -1,0 +1,237 @@
+{{define "content"}}
+{{$p := .Project}}{{$d := .Data}}{{$s := .Data.Snapshot.Summary}}
+{{$action := printf "/projects/%d" $p.ID}}{{if .AuthorView}}{{$action = printf "/projects/%d/authors/%d" $p.ID .AuthorID}}{{end}}
+
+<section class="hero">
+  <div class="hero-title">
+    <div class="eyebrow eyebrow-path">
+      {{if .AuthorView}}<a href="/projects/{{$p.ID}}?from={{.Filter.From}}&to={{.Filter.To}}">← {{$p.Name}}</a><i>/</i><span>Мой вклад</span>
+      {{else}}<span>Проект</span><i>/</i><span class="wrap-any">{{$p.RepoURL}}</span>{{with $p.Branch}}<i>/</i><span>{{.}}</span>{{end}}{{end}}
+    </div>
+    <h1 class="display-xl">{{if .AuthorView}}{{$d.Scope}}{{else}}{{$p.Name}}{{end}}</h1>
+    <p class="lead">{{if not .AuthorView}}{{$d.Scope}} · {{end}}{{date $d.Period.From}} — {{lastDay $d.Period.To}} · сравнение с предыдущим периодом той же длины</p>
+  </div>
+  <div class="hero-side">
+    {{if .Running}}<span class="status running">{{template "syncIcon"}}Синхронизация… страница обновится</span>
+    {{else}}<span class="status {{$p.SyncStatus}}"><span class="dot"></span>{{status $p.SyncStatus}} <span class="mono faint">{{ago $p.LastSyncAt}}</span></span>
+    <form method="post" action="/projects/{{$p.ID}}/sync"><input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button class="btn btn-ink">{{template "syncIcon"}} Синхронизировать</button></form>
+    {{end}}
+    {{with $p.SyncError}}<p class="sync-err">{{.}}</p>{{end}}
+  </div>
+</section>
+
+<form class="filterbar" method="get" action="{{$action}}">
+  <div class="seg" role="group" aria-label="Период">
+    {{range .Filter.Presets}}<a href="{{$action}}?days={{.}}{{if $.Filter.TeamID}}&team={{$.Filter.TeamID}}{{end}}" {{if eq . $.Filter.Preset}}aria-current="true"{{end}}>{{.}} дн</a>{{end}}
+  </div>
+  <label class="inline">с <input type="date" name="from" value="{{.Filter.From}}"></label>
+  <label class="inline">по <input type="date" name="to" value="{{.Filter.To}}"></label>
+  {{if and (not .AuthorView) .Teams}}
+  <label class="inline">Команда
+    <select name="team">
+      <option value="">Весь проект</option>
+      {{range .Teams}}<option value="{{.ID}}" {{if eq64 .ID $.Filter.TeamID}}selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </label>
+  {{end}}
+  <button class="btn btn-outline btn-sm push">Показать</button>
+</form>
+
+{{if and (eq $s.Commits 0) (eq $s.MRMerged 0) (eq $p.SyncStatus "never")}}
+<section class="empty"><p class="empty-title">Данные ещё не загружены</p><p class="muted">Дождитесь окончания первой синхронизации.</p></section>
+{{end}}
+
+<section class="kpis" aria-label="Ключевые метрики">
+  {{range .KPIs}}
+  <div class="kpi" title="{{.Description}}">
+    <div class="label">{{.Title}}</div>
+    <div class="kpi-value"><span class="num-xl">{{.Value}}</span>{{with .Unit}}<span class="kpi-unit">{{.}}</span>{{end}}</div>
+    <div class="kpi-delta {{.Verdict}}">{{if .Delta}}<span class="mono">{{if eq .Verdict "improved"}}▲{{else if eq .Verdict "worsened"}}▼{{else}}•{{end}} {{.Delta}}</span><span class="faint">{{.VerdictText}}</span>{{else}}&nbsp;{{end}}</div>
+  </div>
+  {{end}}
+</section>
+
+{{with $d.Recommendations}}
+<section class="split">
+  <div class="split-side">
+    <h2 class="display-s">Выводы и&nbsp;рекомендации</h2>
+    <p class="note">Правила срабатывают, когда метрика заметно изменилась к прошлому периоду.</p>
+  </div>
+  <ol class="recs">
+    {{range $i, $r := .}}
+    <li class="rec">
+      <span class="rec-num">{{idx2 $i}}</span>
+      <span class="tag tag-{{$r.Severity}}">{{sevLabel $r.Severity}}</span>
+      <div><b class="rec-title">{{$r.Title}}</b><p>{{$r.Advice}}</p></div>
+    </li>
+    {{end}}
+  </ol>
+</section>
+{{end}}
+
+<script type="application/json" id="chart-data">{{.Charts}}</script>
+<section class="row-2 {{if not $d.Snapshot.HasProviderData}}row-1{{end}}">
+  <figure class="panel">
+    <figcaption class="panel-cap">
+      <h2 class="display-xs">Коммиты по неделям</h2>
+      <span class="mono faint small">без merge-коммитов · {{len .Charts.Weeks}} нед</span>
+    </figcaption>
+    <div class="chart-box"><canvas id="chart-activity" role="img" aria-label="Гистограмма коммитов по неделям"></canvas></div>
+  </figure>
+  {{if $d.Snapshot.HasProviderData}}
+  <figure class="panel">
+    <figcaption class="panel-cap panel-cap-col">
+      <h2 class="display-xs">Lead time MR</h2>
+      <span class="mono faint small">медиана по неделям, часы; пропуск — нет влитых MR</span>
+    </figcaption>
+    <div class="chart-box"><canvas id="chart-lead" role="img" aria-label="Линия медианного lead time по неделям"></canvas></div>
+  </figure>
+  {{end}}
+</section>
+
+<section class="row-2 row-heat {{if .AuthorView}}row-1{{end}}">
+  <div class="panel">
+    <h2 class="display-xs">Когда идёт работа</h2>
+    <p class="note">Коммиты по дням недели и часам (местное время автора). Всё, что вне рамки рабочего дня, — сигнал переработок.</p>
+    <div class="heat" role="img" aria-label="Тепловая карта коммитов по дням недели и часам">
+      <div class="heat-days">{{range .Heatmap}}<span>{{.Day}}</span>{{end}}</div>
+      <div class="heat-body">
+        <div class="heat-grid">{{range .Heatmap}}{{range .Cells}}<span class="h{{.Level}}" title="{{.Title}}"></span>{{end}}{{end}}</div>
+        <div class="heat-overlay" aria-hidden="true"><span class="heat-frame ws-{{.WorkStart}} we-{{.WorkEnd}}"></span></div>
+      </div>
+      <span></span>
+      <div class="heat-hours mono"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+    </div>
+    <div class="heat-foot">
+      <div class="heat-legend">меньше <span class="h0"></span><span class="h1"></span><span class="h2"></span><span class="h3"></span><span class="h4"></span><span class="h5"></span> больше</div>
+      <div class="heat-stats"><span>Вне рабочего времени <b class="mono">{{pct $s.OffHoursShare}}</b></span><span>В выходные <b class="mono">{{pct $s.WeekendShare}}</b></span></div>
+    </div>
+  </div>
+  {{if not .AuthorView}}
+  <div class="panel">
+    <h2 class="display-xs">Владение кодом</h2>
+    <p class="note">Bus factor — сколько людей должны «выпасть», чтобы больше 50% активных файлов остались без владельца.</p>
+    <div class="bus">
+      <span class="bus-num {{if le $s.BusFactor 2}}risk{{end}}">{{$s.BusFactor}}</span>
+      <span class="bus-cap">bus factor<br><span class="mono faint">файлов: {{$s.FilesTracked}}</span></span>
+    </div>
+    {{with $d.Snapshot.Ownership}}{{$top := (index . 0).Share}}
+    <div class="owners">
+      {{range $i, $o := .}}{{if lt $i 8}}
+      <div class="owner">
+        <span class="owner-name">{{$o.Name}}</span>
+        <progress class="bar {{if lt $i 2}}bar-danger{{end}}" value="{{$o.Share}}" max="{{$top}}">{{$o.Share}}%</progress>
+        <span class="mono owner-share">{{$o.Share}}%</span>
+      </div>
+      {{end}}{{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+
+{{if not .AuthorView}}
+<section class="block">
+  <div class="block-head">
+    <h2 class="display-s">Вклад разработчиков</h2>
+    <span class="note">Нажмите на имя, чтобы открыть страницу «Мой вклад»</span>
+  </div>
+  {{$maxPts := 1}}{{with $d.Contribution.Scores}}{{$maxPts = (index . 0).Points}}{{end}}
+  <div class="table-wrap">
+  <table class="t">
+    <thead><tr><th>Разработчик</th><th class="n">Баллы</th><th class="n">Коммиты</th><th class="n">Акт. дни</th><th class="n">Медиана коммита</th>
+      <th class="n">С тестами</th><th class="n">Сообщения</th><th class="n">MR</th><th class="n">Lead time</th><th class="n">Ревью</th><th class="n">Задачи</th><th class="n">Файлов</th></tr></thead>
+    <tbody>
+    {{range $d.Snapshot.Authors}}{{$pts := index $.Points .AuthorID}}
+    <tr><td><a href="/projects/{{$p.ID}}/authors/{{.AuthorID}}?from={{$.Filter.From}}&to={{$.Filter.To}}">{{.Name}}</a></td>
+      <td class="n"><span class="pts"><progress class="bar bar-mini bar-accent" value="{{$pts}}" max="{{$maxPts}}"></progress><b class="mono">{{$pts}}</b></span></td>
+      <td class="n">{{.Commits}}</td><td class="n">{{.ActiveDays}}</td>
+      <td class="n">{{num .MedianCommitSize}}</td><td class="n">{{pct .TestRatio}}</td><td class="n">{{pct .MessageQuality}}</td>
+      <td class="n">{{.MRMerged}}</td><td class="n">{{hours .MRLeadTimeMedianH}}</td><td class="n">{{.ReviewsGiven}}</td>
+      <td class="n">{{.IssuesClosed}}</td><td class="n">{{.FilesOwned}}</td></tr>
+    {{else}}<tr><td colspan="12" class="faint">Нет активности за период.</td></tr>{{end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+{{end}}
+
+<section class="split">
+  <div class="split-side">
+    <div class="eyebrow accent">Zerocracy</div>
+    <h2 class="display-s">{{if .AuthorView}}Мой вклад: баллы{{else}}Баллы за&nbsp;результат{{end}}</h2>
+    <p class="note">Начисляются автоматически по опубликованной политике: за влитые MR, ревью, закрытые задачи и связь коммитов с задачами. Штрафы — за огромные MR, влитие без ревью и просроченные задачи.</p>
+  </div>
+  <div class="scores">
+    {{range $d.Contribution.Scores}}
+    <div class="score">
+      <span class="score-name">{{.Name}}</span>
+      <b class="score-pts">{{.Points}}</b>
+      <span class="mono faint score-share">{{printf "%.0f" .Share}}%</span>
+      <div class="chips">{{range $k, $v := .Breakdown}}<span class="chip {{if lt $v 0}}chip-neg{{end}}">{{kind $k}} {{signed $v}}</span>{{end}}</div>
+    </div>
+    {{else}}<p class="faint score-empty">За период баллы не начислялись.</p>{{end}}
+    {{with .Events}}
+    <details class="log">
+      <summary>Журнал начислений · последние {{len .}}</summary>
+      <div class="table-wrap">
+      <table class="t">
+        <thead><tr><th>Когда</th><th>Кто</th><th>За что</th><th>Ссылка</th><th class="n">Баллы</th></tr></thead>
+        <tbody>{{range .}}<tr><td class="nowrap mono">{{datetime .At}}</td><td>{{index $.AuthorNames .AuthorID}}</td><td>{{.Reason}}</td><td class="mono">{{.Ref}}</td><td class="n">{{signed .Points}}</td></tr>{{end}}</tbody>
+      </table>
+      </div>
+    </details>
+    {{end}}
+  </div>
+</section>
+
+{{with $d.Suggestions}}
+<section class="split">
+  <div class="split-side">
+    <h2 class="display-s">Распределение открытых задач</h2>
+    <p class="note">Кандидаты подобраны автоматически: опыт (файлы и метки задач, пересекающиеся с задачей) × текущая загрузка.</p>
+  </div>
+  <div class="table-wrap">
+  <table class="t">
+    <thead><tr><th>Задача</th><th>Кандидаты</th></tr></thead>
+    <tbody>{{range .}}<tr><td>#{{.IssueIID}} {{.Title}} {{range .Labels}}<span class="chip">{{.}}</span>{{end}}</td>
+      <td>{{range $i, $c := .Candidates}}<div>{{if eq $i 0}}<b>{{$c.Name}}</b>{{else}}{{$c.Name}}{{end}} <span class="faint small">· {{$c.Score}} · {{$c.Reason}}</span></div>{{end}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+</section>
+{{end}}
+
+{{with $d.Snapshot.Hotspots}}{{$top := (index . 0).Changes}}
+<section class="split">
+  <div class="split-side">
+    <h2 class="display-s">Горячие точки кода</h2>
+    <p class="note">Файлы, которые меняются чаще всего. Много изменений от многих авторов — кандидат на рефакторинг.</p>
+  </div>
+  <div class="table-wrap">
+  <table class="t">
+    <thead><tr><th>Файл</th><th class="n">Изменений</th><th class="n">Строк</th><th class="n">Авторов</th></tr></thead>
+    <tbody>{{range .}}<tr><td class="mono wrap-any">{{dir .Path}}<b>{{base .Path}}</b></td>
+      <td class="n"><span class="pts"><progress class="bar bar-mini bar-ink" value="{{.Changes}}" max="{{$top}}"></progress>{{.Changes}}</span></td>
+      <td class="n">{{.Churn}}</td><td class="n">{{.Authors}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+</section>
+{{end}}
+
+<section class="block block-last">
+  <div class="block-head">
+    <h2 class="display-s">Все метрики и как они считаются</h2>
+  </div>
+  <div class="table-wrap">
+  <table class="t">
+    <thead><tr><th>Группа</th><th>Метрика</th><th class="n">Значение</th><th class="n">Прошлый период</th><th class="n">Изменение</th><th>Как считается</th></tr></thead>
+    <tbody>{{range .Metrics}}<tr><td class="faint">{{.Group}}</td><td>{{.Title}}</td><td class="n"><b>{{value .Unit .Current}}</b></td>
+      <td class="n">{{value .Unit .Previous}}</td><td class="n {{.Verdict}}">{{delta .DeltaPct}} {{if .DeltaPct}}{{verdict .Verdict}}{{end}}</td>
+      <td class="small faint">{{.Description}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+</section>
+<script src="{{asset "chart.umd.min.js"}}"></script>
+<script src="{{asset "app.js"}}"></script>
+{{end}}

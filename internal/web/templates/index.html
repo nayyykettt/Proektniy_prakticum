@@ -1,0 +1,70 @@
+{{define "content"}}
+<section class="hero hero-rule">
+  <div class="hero-title">
+    <div class="eyebrow">Реестр · {{len .Projects}} {{plural (len .Projects) "репозиторий" "репозитория" "репозиториев"}}</div>
+    <h1 class="display-xl">Проекты</h1>
+  </div>
+  <p class="lead">Ваши репозитории, по которым система сама собирает метрики. Другие пользователи их не видят. Синхронизация и еженедельные отчёты идут по расписанию.</p>
+</section>
+
+{{if .Projects}}
+<section class="plist" aria-label="Список проектов">
+  <div class="plist-row plist-head" aria-hidden="true">
+    <span>№</span><span>Проект</span><span>Репозиторий</span><span>Т1 Код</span><span>Статус</span><span>Синхронизация</span><span></span>
+  </div>
+  {{range $i, $p := .Projects}}
+  <div class="plist-row">
+    <span class="plist-num">{{idx2 $i}}</span>
+    <a class="plist-name" href="/projects/{{.ID}}">{{.Name}}</a>
+    <span class="mono plist-repo">{{.RepoURL}}{{with .Branch}} <span class="faint">@{{.}}</span>{{end}}</span>
+    <span class="plist-t1">{{if eq .Provider "t1code"}}подключён{{else}}<span class="faint">—</span>{{end}}</span>
+    <span class="plist-status">
+      {{if index $.Running .ID}}<span class="status running">{{template "syncIcon"}}Синхронизация…</span>
+      {{else}}<span class="status {{.SyncStatus}}"><span class="dot"></span>{{status .SyncStatus}}</span>{{end}}
+      {{with .SyncError}}<span class="plist-err">{{.}}</span>{{end}}
+    </span>
+    <span class="mono faint plist-ago">{{ago .LastSyncAt}}</span>
+    <form method="post" action="/projects/{{.ID}}/sync" class="plist-act">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="back" value="/">
+      <button class="btn btn-outline" {{if index $.Running .ID}}disabled{{end}}>Синхронизировать</button>
+    </form>
+  </div>
+  {{end}}
+</section>
+{{else}}
+<section class="empty">
+  <p class="empty-title">Пока нет проектов</p>
+  <p class="muted">Добавьте первый репозиторий ниже — система клонирует его, разберёт историю и построит дашборд.</p>
+</section>
+{{end}}
+
+<section class="split split-wide">
+  <div class="split-side">
+    <div class="eyebrow accent">Новый проект</div>
+    <h2 class="display-m">Добавить репозиторий</h2>
+    <p class="lead-s">Система клонирует репозиторий, разберёт историю и построит дашборд. Токен хранится в зашифрованном виде.</p>
+  </div>
+  <form method="post" action="/projects" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="field">Название <input name="name" required maxlength="100" value="{{.Form.Name}}" placeholder="Backend сервиса оплаты"></label>
+    <label class="field">Адрес Git-репозитория <input class="mono" name="repo_url" required value="{{.Form.RepoURL}}" placeholder="https://code.example.ru/group/app.git"></label>
+    <label class="field">Ветка <input name="branch" value="{{.Form.Branch}}" placeholder="по умолчанию — основная"></label>
+    <label class="field">Токен доступа <input type="password" name="token" autocomplete="off" placeholder="для приватных репозиториев и Т1 Код"></label>
+    <fieldset class="span2 fieldset">
+      <legend>Интеграция с Т1 Код</legend>
+      <div class="form-grid form-grid-3">
+        <label class="field">Платформа
+          <select name="provider">
+            <option value="none" {{if ne .Form.Provider "t1code"}}selected{{end}}>Только Git</option>
+            <option value="t1code" {{if eq .Form.Provider "t1code"}}selected{{end}}>Т1 Код / Сфера.Код</option>
+          </select>
+        </label>
+        <label class="field">Адрес инстанса <input class="mono" name="provider_url" value="{{.Form.ProviderURL}}" placeholder="https://code.example.ru"></label>
+        <label class="field">ID или путь проекта <input class="mono" name="provider_project_id" value="{{.Form.ProviderProjectID}}" placeholder="42 или group/app"></label>
+      </div>
+      <p class="note">Совместимо с GitLab API v4: токену достаточно прав <span class="mono">read_api</span> и <span class="mono">read_repository</span>.</p>
+    </fieldset>
+    <div class="span2"><button class="btn btn-accent btn-lg">Добавить и синхронизировать <span aria-hidden="true">→</span></button></div>
+  </form>
+</section>
+{{end}}

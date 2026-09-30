@@ -1,0 +1,25 @@
+{
+  "mr_merged": 10,
+  "mr_small_bonus": 5,
+  "mr_small_lines": 200,
+  "mr_large_penalty": -5,
+  "mr_large_lines": 400,
+  "mr_no_review_penalty": -3,
+  "review": 3,
+  "review_comment": 1,
+  "review_comment_cap": 5,
+  "issue_closed": 5,
+  "label_points": {
+    "size::xs": 2,
+    "size::s": 5,
+    "size::m": 10,
+    "size::l": 20,
+    "size::xl": 30,
+    "bug": 5,
+    "critical": 15
+  },
+  "commit_linked": 1,
+  "commit_linked_per_day": 5,
+  "overdue_penalty": -2,
+  "overdue_days": 14
+}

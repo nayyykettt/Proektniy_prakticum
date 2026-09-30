@@ -1,0 +1,101 @@
+{{define "content"}}
+{{$p := .Project}}
+<section class="hero hero-rule">
+  <div class="hero-title">
+    <div class="eyebrow">{{$p.Name}} · управление</div>
+    <h1 class="display-xl">Настройки</h1>
+  </div>
+  <p class="lead hero-note">Параметры репозитория, команды внутри проекта и объединение дублей авторов.</p>
+</section>
+
+<section class="split">
+  <div class="split-side">
+    <h2 class="display-s">Проект</h2>
+    <p class="note">Токен хранится в зашифрованном виде; оставьте поле пустым, чтобы не менять его.</p>
+  </div>
+  <form method="post" action="/projects/{{$p.ID}}/settings" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="field">Название <input name="name" required maxlength="100" value="{{.Form.Name}}"></label>
+    <label class="field">Адрес Git-репозитория <input class="mono" name="repo_url" required value="{{.Form.RepoURL}}"></label>
+    <label class="field">Ветка <input name="branch" value="{{.Form.Branch}}" placeholder="по умолчанию — основная"></label>
+    <label class="field">Новый токен доступа <input type="password" name="token" autocomplete="off" placeholder="{{if $p.HasToken}}сохранён — оставьте пустым{{else}}не задан{{end}}"></label>
+    <fieldset class="span2 fieldset">
+      <legend>Интеграция с Т1 Код</legend>
+      <div class="form-grid form-grid-3">
+        <label class="field">Платформа
+          <select name="provider">
+            <option value="none" {{if ne .Form.Provider "t1code"}}selected{{end}}>Только Git</option>
+            <option value="t1code" {{if eq .Form.Provider "t1code"}}selected{{end}}>Т1 Код / Сфера.Код</option>
+          </select>
+        </label>
+        <label class="field">Адрес инстанса <input class="mono" name="provider_url" value="{{.Form.ProviderURL}}" placeholder="https://code.example.ru"></label>
+        <label class="field">ID или путь проекта <input class="mono" name="provider_project_id" value="{{.Form.ProviderProjectID}}"></label>
+      </div>
+    </fieldset>
+    {{if $p.HasToken}}<label class="check span2"><input type="checkbox" name="clear_token"> Удалить сохранённый токен</label>{{end}}
+    <div class="span2"><button class="btn btn-ink btn-lg">Сохранить</button></div>
+  </form>
+</section>
+
+<section class="split">
+  <div class="split-side">
+    <h2 class="display-s">Команды</h2>
+    <p class="note">Команда — группа разработчиков внутри проекта. На дашборде можно смотреть метрики отдельной команды.</p>
+  </div>
+  <div class="teams">
+    {{range .Teams}}{{$t := .}}
+    <details class="team">
+      <summary><b>{{.Name}}</b> <span class="faint">· {{len .MemberIDs}} чел.</span></summary>
+      <form method="post" action="/projects/{{$p.ID}}/teams" class="stack">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="team_id" value="{{.ID}}">
+        <label class="field">Название <input name="name" value="{{.Name}}" required maxlength="100"></label>
+        <div class="members">{{range $.Authors}}<label class="check"><input type="checkbox" name="members" value="{{.ID}}" {{if index (index $.Members $t.ID) .ID}}checked{{end}}> {{.Name}} <span class="faint small">{{.Email}}</span></label>{{end}}</div>
+        <div class="row-actions">
+          <button class="btn btn-outline">Сохранить команду</button>
+          <button class="btn btn-danger" formaction="/projects/{{$p.ID}}/teams/{{.ID}}/delete" formnovalidate>Удалить команду</button>
+        </div>
+      </form>
+    </details>
+    {{end}}
+    {{if .Authors}}
+    <details class="team" {{if not .Teams}}open{{end}}>
+      <summary><b>+ Новая команда</b></summary>
+      <form method="post" action="/projects/{{$p.ID}}/teams" class="stack">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <label class="field">Название <input name="name" required maxlength="100" placeholder="Backend"></label>
+        <div class="members">{{range .Authors}}<label class="check"><input type="checkbox" name="members" value="{{.ID}}"> {{.Name}} <span class="faint small">{{.Email}}</span></label>{{end}}</div>
+        <div><button class="btn btn-ink">Создать команду</button></div>
+      </form>
+    </details>
+    {{else}}<p class="faint">Разработчики появятся после первой синхронизации.</p>{{end}}
+  </div>
+</section>
+
+{{if gt (len .Authors) 1}}
+<section class="split">
+  <div class="split-side">
+    <h2 class="display-s">Объединение авторов</h2>
+    <p class="note">Если один человек коммитил с разных email (рабочий/личный), объедините записи — вся активность перейдёт к основной.</p>
+  </div>
+  <form method="post" action="/projects/{{$p.ID}}/authors/merge" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="field">Основная запись <select name="target">{{range .Authors}}<option value="{{.ID}}">{{.Name}} {{.Email}} {{.Login}}</option>{{end}}</select></label>
+    <label class="field">Присоединить <select name="source">{{range .Authors}}<option value="{{.ID}}">{{.Name}} {{.Email}} {{.Login}}</option>{{end}}</select></label>
+    <div class="span2"><button class="btn btn-outline">Объединить</button></div>
+  </form>
+</section>
+{{end}}
+
+<section class="split split-danger">
+  <div class="split-side">
+    <div class="eyebrow danger">Необратимо</div>
+    <h2 class="display-s">Удаление проекта</h2>
+    <p class="note">Будут удалены все собранные данные, отчёты и локальный клон.</p>
+  </div>
+  <form method="post" action="/projects/{{$p.ID}}/delete" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="field span2">Введите название проекта для подтверждения <input name="confirm" required autocomplete="off" placeholder="{{$p.Name}}"></label>
+    <div class="span2"><button class="btn btn-danger">Удалить проект</button></div>
+  </form>
+</section>
+{{end}}

@@ -1,0 +1,73 @@
+{{define "content"}}
+<div class="auth">
+  <section class="auth-art">
+    <div class="auth-top">
+      <div class="brand brand-light">{{template "logo"}} TeamPulse</div>
+      {{template "accentSwitch" .}}
+    </div>
+    <div class="auth-grid" aria-hidden="true">{{range .Cells}}<span class="c{{.Level}} x{{.Col}} y{{.Row}}"><i></i></span>{{end}}</div>
+    <div class="auth-claim" aria-hidden="true">
+      <p>Команда видна по&nbsp;коду, <i>а&nbsp;не&nbsp;по&nbsp;отчётам.</i></p>
+      <div class="auth-tags"><span>Git</span><span>Т1 Код</span><span>22 метрики</span><span>Zerocracy</span></div>
+    </div>
+  </section>
+
+  <section class="auth-main">
+    <div class="auth-box">
+      <nav class="seg auth-switch" aria-label="Вход или регистрация">
+        <a href="/login{{with .Next}}{{if ne . "/"}}?next={{.}}{{end}}{{end}}" {{if eq .Mode "login"}}aria-current="page"{{end}}>Вход</a>
+        <a href="/register{{with .Next}}{{if ne . "/"}}?next={{.}}{{end}}{{end}}" {{if eq .Mode "register"}}aria-current="page"{{end}}>Регистрация</a>
+      </nav>
+
+      {{if eq .Mode "register"}}
+      <form method="post" action="/register" class="auth-form" id="register-form" novalidate>
+        <input type="hidden" name="next" value="{{.Next}}">
+        <div class="auth-head">
+          <div class="eyebrow">Регистрация</div>
+          <h1 class="display-l">Новый аккаунт</h1>
+          <p class="lead">У каждого пользователя свои отслеживаемые репозитории — другие их не видят.</p>
+        </div>
+        {{with .Error}}<div class="alert err" role="alert">{{.}}</div>{{end}}
+        <label class="field">Логин
+          <input name="login" value="{{.Login}}" required autofocus autocomplete="username" autocapitalize="off" spellcheck="false"
+            minlength="{{.Rules.MinLogin}}" maxlength="{{.Rules.MaxLogin}}" pattern="[A-Za-z0-9._\-]+" aria-describedby="login-hint">
+          <span class="hint" id="login-hint">{{.Rules.MinLogin}}–{{.Rules.MaxLogin}} символов: латинские буквы, цифры, . _ -</span>
+        </label>
+        <label class="field">Пароль
+          <input type="password" name="password" id="password" required autocomplete="new-password"
+            minlength="{{.Rules.MinPassword}}" maxlength="{{.Rules.MaxPassword}}" aria-describedby="password-hint">
+          <span class="hint" id="password-hint">Не короче {{.Rules.MinPassword}} символов</span>
+        </label>
+        <label class="field">Повторите пароль
+          <input type="password" name="password_confirm" id="password-confirm" required autocomplete="new-password"
+            maxlength="{{.Rules.MaxPassword}}" aria-describedby="confirm-hint">
+          <span class="hint" id="confirm-hint" aria-live="polite">Введите пароль ещё раз</span>
+        </label>
+        <button type="submit" class="btn-wide">Зарегистрироваться <span aria-hidden="true">→</span></button>
+        <p class="auth-foot">Уже есть аккаунт? <a href="/login">Войдите</a>.</p>
+      </form>
+      <script src="{{asset "auth.js"}}"></script>
+      {{else}}
+      <form method="post" action="/login" class="auth-form">
+        <input type="hidden" name="next" value="{{.Next}}">
+        <div class="auth-head">
+          <div class="eyebrow">Вход</div>
+          <h1 class="display-l">С возвращением</h1>
+          <p class="lead">Войдите, чтобы открыть свои проекты и метрики команды.</p>
+        </div>
+        {{with .Flash}}<div class="alert ok" role="status">{{.}}</div>{{end}}
+        {{with .Error}}<div class="alert err" role="alert">{{.}}</div>{{end}}
+        <label class="field">Логин
+          <input name="login" value="{{.Login}}" required {{if not .Login}}autofocus{{end}} autocomplete="username" autocapitalize="off" spellcheck="false">
+        </label>
+        <label class="field">Пароль
+          <input type="password" name="password" required {{if .Login}}autofocus{{end}} autocomplete="current-password">
+        </label>
+        <button type="submit" class="btn-wide">Войти <span aria-hidden="true">→</span></button>
+        <p class="auth-foot">Нет аккаунта? <a href="/register">Зарегистрируйтесь</a> — это займёт минуту.</p>
+      </form>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}
