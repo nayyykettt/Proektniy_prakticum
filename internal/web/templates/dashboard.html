@@ -4,19 +4,21 @@
 
 <section class="hero">
   <div class="hero-title">
-    <div class="eyebrow eyebrow-path">
+    <div class="crumbs">
       {{if .AuthorView}}<a href="/projects/{{$p.ID}}?from={{.Filter.From}}&to={{.Filter.To}}">← {{$p.Name}}</a><i>/</i><span>Мой вклад</span>
       {{else}}<span>Проект</span><i>/</i><span class="wrap-any">{{$p.RepoURL}}</span>{{with $p.Branch}}<i>/</i><span>{{.}}</span>{{end}}{{end}}
     </div>
     <h1 class="display-xl">{{if .AuthorView}}{{$d.Scope}}{{else}}{{$p.Name}}{{end}}</h1>
-    <p class="lead">{{if not .AuthorView}}{{$d.Scope}} · {{end}}{{date $d.Period.From}} — {{lastDay $d.Period.To}} · сравнение с предыдущим периодом той же длины</p>
   </div>
   <div class="hero-side">
-    {{if .Running}}<span class="status running">{{template "syncIcon"}}Синхронизация… страница обновится</span>
-    {{else}}<span class="status {{$p.SyncStatus}}"><span class="dot"></span>{{status $p.SyncStatus}} <span class="mono faint">{{ago $p.LastSyncAt}}</span></span>
-    <form method="post" action="/projects/{{$p.ID}}/sync"><input type="hidden" name="csrf" value="{{.CSRF}}">
-      <button class="btn btn-ink">{{template "syncIcon"}} Синхронизировать</button></form>
-    {{end}}
+    <p class="lead">{{if not .AuthorView}}{{$d.Scope}} · {{end}}{{date $d.Period.From}} — {{lastDay $d.Period.To}} · сравнение с предыдущим периодом той же длины</p>
+    <div class="hero-actions">
+      {{if .Running}}<span class="status running">{{template "syncIcon"}}Синхронизация… страница обновится</span>
+      {{else}}<span class="status {{$p.SyncStatus}}"><span class="dot"></span>{{status $p.SyncStatus}} <span class="faint">· {{ago $p.LastSyncAt}}</span></span>
+      <form method="post" action="/projects/{{$p.ID}}/sync"><input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button class="btn btn-outline">{{template "syncIcon"}} Синхронизировать</button></form>
+      {{end}}
+    </div>
     {{with $p.SyncError}}<p class="sync-err">{{.}}</p>{{end}}
   </div>
 </section>
@@ -35,7 +37,7 @@
     </select>
   </label>
   {{end}}
-  <button class="btn btn-outline btn-sm push">Показать</button>
+  <button class="btn btn-accent push">Показать</button>
 </form>
 
 {{if and (eq $s.Commits 0) (eq $s.MRMerged 0) (eq $p.SyncStatus "never")}}
@@ -45,7 +47,7 @@
 <section class="kpis" aria-label="Ключевые метрики">
   {{range .KPIs}}
   <div class="kpi" title="{{.Description}}">
-    <div class="label">{{.Title}}</div>
+    <div class="kpi-title">{{.Title}}</div>
     <div class="kpi-value"><span class="num-xl">{{.Value}}</span>{{with .Unit}}<span class="kpi-unit">{{.}}</span>{{end}}</div>
     <div class="kpi-delta {{.Verdict}}">{{if .Delta}}<span class="mono">{{if eq .Verdict "improved"}}▲{{else if eq .Verdict "worsened"}}▼{{else}}•{{end}} {{.Delta}}</span><span class="faint">{{.VerdictText}}</span>{{else}}&nbsp;{{end}}</div>
   </div>
@@ -100,7 +102,7 @@
         <div class="heat-grid">{{range .Heatmap}}{{range .Cells}}<span class="h{{.Level}}" title="{{.Title}}"></span>{{end}}{{end}}</div>
         <div class="heat-overlay" aria-hidden="true"><span class="heat-frame ws-{{.WorkStart}} we-{{.WorkEnd}}"></span></div>
       </div>
-      <span></span>
+      <span class="heat-gap"></span>
       <div class="heat-hours mono"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
     </div>
     <div class="heat-foot">
@@ -121,7 +123,7 @@
       {{range $i, $o := .}}{{if lt $i 8}}
       <div class="owner">
         <span class="owner-name">{{$o.Name}}</span>
-        <progress class="bar {{if lt $i 2}}bar-danger{{end}}" value="{{$o.Share}}" max="{{$top}}">{{$o.Share}}%</progress>
+        <progress class="bar {{if lt $i 2}}bar-accent{{else}}bar-muted{{end}}" value="{{$o.Share}}" max="{{$top}}">{{$o.Share}}%</progress>
         <span class="mono owner-share">{{$o.Share}}%</span>
       </div>
       {{end}}{{end}}
@@ -159,7 +161,7 @@
 
 <section class="split">
   <div class="split-side">
-    <div class="eyebrow accent">Zerocracy</div>
+    <span class="eyebrow">Zerocracy</span>
     <h2 class="display-s">{{if .AuthorView}}Мой вклад: баллы{{else}}Баллы за&nbsp;результат{{end}}</h2>
     <p class="note">Начисляются автоматически по опубликованной политике: за влитые MR, ревью, закрытые задачи и связь коммитов с задачами. Штрафы — за огромные MR, влитие без ревью и просроченные задачи.</p>
   </div>
@@ -167,7 +169,7 @@
     {{range $d.Contribution.Scores}}
     <div class="score">
       <span class="score-name">{{.Name}}</span>
-      <b class="score-pts">{{.Points}}</b>
+      <b class="score-pts">{{.Points}}{{if gt .Points 0}}<span class="plus" aria-hidden="true">+</span>{{end}}</b>
       <span class="mono faint score-share">{{printf "%.0f" .Share}}%</span>
       <div class="chips">{{range $k, $v := .Breakdown}}<span class="chip {{if lt $v 0}}chip-neg{{end}}">{{kind $k}} {{signed $v}}</span>{{end}}</div>
     </div>
@@ -176,7 +178,7 @@
     <details class="log">
       <summary>Журнал начислений · последние {{len .}}</summary>
       <div class="table-wrap">
-      <table class="t">
+      <table class="t t-sm">
         <thead><tr><th>Когда</th><th>Кто</th><th>За что</th><th>Ссылка</th><th class="n">Баллы</th></tr></thead>
         <tbody>{{range .}}<tr><td class="nowrap mono">{{datetime .At}}</td><td>{{index $.AuthorNames .AuthorID}}</td><td>{{.Reason}}</td><td class="mono">{{.Ref}}</td><td class="n">{{signed .Points}}</td></tr>{{end}}</tbody>
       </table>
@@ -193,7 +195,7 @@
     <p class="note">Кандидаты подобраны автоматически: опыт (файлы и метки задач, пересекающиеся с задачей) × текущая загрузка.</p>
   </div>
   <div class="table-wrap">
-  <table class="t">
+  <table class="t t-sm">
     <thead><tr><th>Задача</th><th>Кандидаты</th></tr></thead>
     <tbody>{{range .}}<tr><td>#{{.IssueIID}} {{.Title}} {{range .Labels}}<span class="chip">{{.}}</span>{{end}}</td>
       <td>{{range $i, $c := .Candidates}}<div>{{if eq $i 0}}<b>{{$c.Name}}</b>{{else}}{{$c.Name}}{{end}} <span class="faint small">· {{$c.Score}} · {{$c.Reason}}</span></div>{{end}}</td></tr>{{end}}</tbody>
@@ -209,7 +211,7 @@
     <p class="note">Файлы, которые меняются чаще всего. Много изменений от многих авторов — кандидат на рефакторинг.</p>
   </div>
   <div class="table-wrap">
-  <table class="t">
+  <table class="t t-sm">
     <thead><tr><th>Файл</th><th class="n">Изменений</th><th class="n">Строк</th><th class="n">Авторов</th></tr></thead>
     <tbody>{{range .}}<tr><td class="mono wrap-any">{{dir .Path}}<b>{{base .Path}}</b></td>
       <td class="n"><span class="pts"><progress class="bar bar-mini bar-ink" value="{{.Changes}}" max="{{$top}}"></progress>{{.Changes}}</span></td>
@@ -219,7 +221,7 @@
 </section>
 {{end}}
 
-<section class="block block-last">
+<section class="block">
   <div class="block-head">
     <h2 class="display-s">Все метрики и как они считаются</h2>
   </div>

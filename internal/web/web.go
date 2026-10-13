@@ -138,7 +138,6 @@ func (h *Handler) owned(next http.Handler) http.Handler {
 // Base — общие данные всех страниц.
 type Base struct {
 	Title   string
-	Accent  string // цвет интерфейса: sky | blue | green
 	User    domain.User
 	CSRF    string
 	Flash   string
@@ -150,23 +149,9 @@ type Base struct {
 
 func (h *Handler) base(r *http.Request, title string) Base {
 	return Base{
-		Title: title, Accent: accentOf(r), User: httpx.User(r),
+		Title: title, User: httpx.User(r),
 		CSRF: h.Auth.CSRFToken(r), Flash: flashes[r.URL.Query().Get("msg")],
 	}
-}
-
-// Accents — цвета интерфейса (первый — по умолчанию). Выбор хранится в cookie браузера.
-var Accents = []struct{ ID, Name string }{{"sky", "Голубой"}, {"blue", "Синий"}, {"green", "Зелёный"}}
-
-func accentOf(r *http.Request) string {
-	if c, err := r.Cookie("tp_accent"); err == nil {
-		for _, a := range Accents {
-			if a.ID == c.Value {
-				return a.ID
-			}
-		}
-	}
-	return Accents[0].ID
 }
 
 // Сообщения об успехе передаются кодом, а не текстом — ничего не отражается из URL.
@@ -247,31 +232,52 @@ func (h *Handler) renderAuth(w http.ResponseWriter, r *http.Request, status int,
 	if mode == "register" {
 		title = "Регистрация"
 	}
-	v := authView{Base: Base{Title: title, Accent: accentOf(r), Error: errMsg, Flash: flashes[r.URL.Query().Get("msg")]}, Mode: mode,
+	v := authView{Base: Base{Title: title, Error: errMsg, Flash: flashes[r.URL.Query().Get("msg")]}, Mode: mode,
 		Next: httpx.SafeNext(r.FormValue("next")), Login: login, Cells: decorCells()}
 	v.Rules.MinLogin, v.Rules.MaxLogin = httpx.MinLoginLen, httpx.MaxLoginLen
 	v.Rules.MinPassword, v.Rules.MaxPassword = httpx.MinPasswordLen, httpx.MaxPasswordLen
 	h.render(w, r, status, "login.html", v)
 }
 
-// DecorCell — клетка декоративного узора: уровень 0…5, колонка и строка (для волны подсветки).
-type DecorCell struct{ Level, Col, Row int }
+// DecorCell — клетка декоративной сетки на левой панели входа.
+// Kind: 0 — пустой угол, 1 — фон с бегущей волной, 2 — знак «+1» (дольше держит подсветку).
+// Level 1…6 — базовая яркость; Col и Row задают задержку волны (классы xN и yN в app.css).
+type DecorCell struct{ Kind, Level, Col, Row int }
 
-// decorCells — узор 30×10 уровней 0…5 для левой панели страницы входа.
+// decorCells — сетка 40×24 со знаком «+1» в центре и скруглёнными углами, как в макете «TeamPulse в стиле Т1».
 func decorCells() []DecorCell {
-	cells := make([]DecorCell, 0, 300)
-	for row := range 10 {
-		for c := range 30 {
-			r, cf := float64(row), float64(c)
-			wave := math.Sin(cf/3.1+r/2.2) + math.Sin(cf/1.7-r/3.3)*0.6 + cf/30*1.2
-			bump := 0.0
-			if (row*7+c*3)%5 == 0 {
-				bump = 1
+	const cols, rows = 40, 24
+	cells := make([]DecorCell, 0, cols*rows)
+	for row := range rows {
+		for c := range cols {
+			kind := 1
+			if corner(c, row, cols, rows) {
+				kind = 0
+			} else if inLogo(c, row) {
+				kind = 2
 			}
-			cells = append(cells, DecorCell{Level: max(0, min(5, int(math.Round(wave*1.6+1.4+bump)))), Col: c, Row: row})
+			r, cf := float64(row), float64(c)
+			wave := math.Sin(cf/3.1+r/2.2) + math.Sin(cf/1.7-r/3.3)*0.6
+			cells = append(cells, DecorCell{Kind: kind, Level: max(1, min(6, int(math.Round(wave*1.5+3.5)))), Col: c, Row: row})
 		}
 	}
 	return cells
+}
+
+// corner — клетки, срезанные в углах сетки.
+func corner(c, row, cols, rows int) bool {
+	edge := min(row, rows-1-row)
+	side := min(c, cols-1-c)
+	return (edge <= 2 && side <= 3) || (edge == 3 && side <= 2)
+}
+
+// inLogo — клетки знака «+1»: у «+» вертикаль 4×14 и горизонталь 14×4, у «1» — вертикаль 4×14.
+func inLogo(c, row int) bool {
+	tall := row >= 5 && row <= 18
+	plusV := c >= 15 && c <= 18 && tall
+	plusH := row >= 10 && row <= 13 && c >= 10 && c <= 23
+	one := c >= 26 && c <= 29 && tall
+	return plusV || plusH || one
 }
 
 func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {

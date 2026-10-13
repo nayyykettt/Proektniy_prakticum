@@ -1,18 +1,16 @@
 {{define "content"}}
 <div class="auth">
   <section class="auth-art">
-    <div class="auth-top">
-      <div class="brand brand-light">{{template "logo"}} TeamPulse</div>
-      {{template "accentSwitch" .}}
-    </div>
-    <div class="auth-grid" aria-hidden="true">{{range .Cells}}<span class="c{{.Level}} x{{.Col}} y{{.Row}}"><i></i></span>{{end}}</div>
+    <div class="brand brand-light">{{template "logo"}}</div>
+    <div class="auth-grid" aria-hidden="true">{{range .Cells}}{{if .Kind}}<span class="k{{.Kind}} l{{.Level}} x{{.Col}} y{{.Row}}"><i></i></span>{{else}}<span></span>{{end}}{{end}}</div>
     <div class="auth-claim" aria-hidden="true">
-      <p>Команда видна по&nbsp;коду, <i>а&nbsp;не&nbsp;по&nbsp;отчётам.</i></p>
+      <p>Команда видна по&nbsp;коду, а&nbsp;не&nbsp;по&nbsp;отчётам.</p>
       <div class="auth-tags"><span>Git</span><span>Т1 Код</span><span>22 метрики</span><span>Zerocracy</span></div>
     </div>
   </section>
 
   <section class="auth-main">
+    <div class="auth-mlogo"><span class="brand">{{template "logo"}}</span></div>
     <div class="auth-box">
       <nav class="seg auth-switch" aria-label="Вход или регистрация">
         <a href="/login{{with .Next}}{{if ne . "/"}}?next={{.}}{{end}}{{end}}" {{if eq .Mode "login"}}aria-current="page"{{end}}>Вход</a>
@@ -23,7 +21,6 @@
       <form method="post" action="/register" class="auth-form" id="register-form" novalidate>
         <input type="hidden" name="next" value="{{.Next}}">
         <div class="auth-head">
-          <div class="eyebrow">Регистрация</div>
           <h1 class="display-l">Новый аккаунт</h1>
           <p class="lead">У каждого пользователя свои отслеживаемые репозитории — другие их не видят.</p>
         </div>
@@ -51,7 +48,6 @@
       <form method="post" action="/login" class="auth-form">
         <input type="hidden" name="next" value="{{.Next}}">
         <div class="auth-head">
-          <div class="eyebrow">Вход</div>
           <h1 class="display-l">С возвращением</h1>
           <p class="lead">Войдите, чтобы открыть свои проекты и метрики команды.</p>
         </div>

@@ -5,23 +5,23 @@
     <div class="eyebrow">{{$p.Name}} · архив</div>
     <h1 class="display-xl">Отчёты</h1>
   </div>
-  <p class="lead hero-note">Хранятся в HTML (печать в PDF), Markdown, CSV и JSON. Каждую неделю планировщик формирует еженедельный отчёт сам.</p>
+  <p class="lead">Хранятся в HTML (печать в PDF), Markdown, CSV и JSON. Каждую неделю планировщик формирует еженедельный отчёт сам.</p>
 </section>
 
-<form method="post" action="/projects/{{$p.ID}}/reports" class="darkbar">
+<form method="post" action="/projects/{{$p.ID}}/reports" class="genbar">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
-  <div class="darkbar-title">
-    <span class="eyebrow eyebrow-bright">Новый отчёт</span>
-    <span class="darkbar-h">Сформировать</span>
+  <div class="genbar-title">
+    <span class="genbar-k">Новый отчёт</span>
+    <span class="genbar-h">Сформировать</span>
   </div>
-  <label class="field-dark">с<input type="date" name="from" value="{{.Filter.From}}" required></label>
-  <label class="field-dark">по<input type="date" name="to" value="{{.Filter.To}}" required></label>
+  <label class="field-light">с<input type="date" name="from" value="{{.Filter.From}}" required></label>
+  <label class="field-light">по<input type="date" name="to" value="{{.Filter.To}}" required></label>
   {{if .Teams}}
-  <label class="field-dark">Команда
+  <label class="field-light">Команда
     <select name="team"><option value="0">Весь проект</option>{{range .Teams}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
   </label>
   {{end}}
-  <button class="btn btn-accent push">Сформировать отчёт</button>
+  <button class="btn btn-white btn-lg push">Сформировать отчёт <span aria-hidden="true">→</span></button>
 </form>
 
 <section class="rlist">
@@ -31,8 +31,8 @@
   <div class="rlist-row">
     <a class="rlist-period" href="/reports/{{.ID}}">{{date .From}} — {{lastDay .To}}</a>
     <span>{{if .TeamID}}Команда: {{index $.TeamMap .TeamID}}{{else}}Весь проект{{end}}</span>
-    <span class="mono faint small">{{datetime .GeneratedAt}}</span>
-    <span class="{{if eq .Trigger "schedule"}}src-auto{{end}}">{{if eq .Trigger "schedule"}}автоматически{{else}}вручную{{end}}</span>
+    <span class="faint">{{datetime .GeneratedAt}}</span>
+    <span><span class="pill{{if ne .Trigger "schedule"}} pill-muted{{end}}">{{if eq .Trigger "schedule"}}автоматически{{else}}вручную{{end}}</span></span>
     <span class="dl">
       <a href="/reports/{{.ID}}" class="dl-main">HTML</a>
       <a href="/reports/{{.ID}}?format=md">MD</a>

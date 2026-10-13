@@ -381,7 +381,7 @@ func TestPagesRender(t *testing.T) {
 		fmt.Sprintf("/reports/%d", rep.ID):                 "Отчёт о производительности",
 		"/static/app.css":                                  "--series-1",
 		"/static/auth.js":                                  "password_confirm",
-		"/static/fonts/golos-cyr.woff2":                    "wOF2",
+		"/static/fonts/onest-cyr.woff2":                    "wOF2",
 	}
 	for path, want := range pages {
 		resp, b := c.get(path)
@@ -398,22 +398,6 @@ func TestPagesRender(t *testing.T) {
 	resp, _ := c.get("/projects/1?from=2026-05-01&to=2026-01-01")
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("некорректный период: %d", resp.StatusCode)
-	}
-	// Цвет интерфейса: из cookie tp_accent, неизвестное значение — голубой по умолчанию.
-	for accent, want := range map[string]string{"green": "green", "blue": "blue", "evil\"x": "sky", "": "sky"} {
-		req, _ := http.NewRequest("GET", e.srv.URL+"/login", nil)
-		if accent != "" {
-			req.AddCookie(&http.Cookie{Name: "tp_accent", Value: accent})
-		}
-		r, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, _ := io.ReadAll(r.Body)
-		r.Body.Close()
-		if !strings.Contains(string(b), `data-accent="`+want+`"`) || !strings.Contains(string(b), `data-accent-pick="green"`) {
-			t.Errorf("tp_accent=%q: ожидался data-accent=%q", accent, want)
-		}
 	}
 	resp, _ = http.Get(e.srv.URL + "/healthz")
 	if resp.StatusCode != http.StatusOK {
