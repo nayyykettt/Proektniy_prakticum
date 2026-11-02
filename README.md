@@ -142,3 +142,6 @@ docs/                 документация проекта
 
 Подробнее: [архитектура](docs/architecture.md) · [MVP и user stories](docs/mvp-and-user-stories.md) ·
 [wireframe](docs/wireframe.md) · [бэклог](docs/backlog.md) · [презентация](docs/presentation.md).
+
+
+Результаты на момент первой итерации
