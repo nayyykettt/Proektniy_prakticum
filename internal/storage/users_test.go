@@ -28,11 +28,14 @@ func TestUsersAndProjectOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Первый пользователь забирает проекты без владельца, второй — нет.
-	if got, _ := s.GetProject(ctx, orphan.ID); got.OwnerID != alice.ID {
-		t.Fatalf("проект без владельца должен перейти первому пользователю: owner=%d", got.OwnerID)
+	// Регистрация не передаёт пользователю существующие данные.
+	if got, _ := s.GetProject(ctx, orphan.ID); got.OwnerID != 0 {
+		t.Fatalf("проект должен остаться без владельца: owner=%d", got.OwnerID)
 	}
 	// Одинаковые названия у разных владельцев допустимы, у одного — конфликт.
+	if err := s.CreateProject(ctx, &domain.Project{OwnerID: alice.ID, Name: "legacy", RepoURL: "x"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.CreateProject(ctx, &domain.Project{OwnerID: bob.ID, Name: "legacy", RepoURL: "x"}); err != nil {
 		t.Fatalf("у другого пользователя то же название допустимо: %v", err)
 	}

@@ -12,6 +12,25 @@ import (
 
 const commitBatch = 500
 
+// LastCommitDates возвращает даты последних обычных коммитов по авторам без ограничения периодом.
+func (s *Store) LastCommitDates(ctx context.Context, projectID int64) (map[int64]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT author_id, MAX(authored_at) FROM commits
+		WHERE project_id=? AND is_merge=0 GROUP BY author_id`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]time.Time{}
+	for rows.Next() {
+		var id, at int64
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		out[id] = fromUnix(at)
+	}
+	return out, rows.Err()
+}
+
 // KnownSHAs возвращает множество уже загруженных коммитов (для инкрементальной синхронизации).
 func (s *Store) KnownSHAs(ctx context.Context, projectID int64) (map[string]bool, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT sha FROM commits WHERE project_id=?`, projectID)

@@ -8,28 +8,30 @@
   <p class="lead">Параметры репозитория, команды внутри проекта и объединение дублей авторов.</p>
 </section>
 
-<section class="split">
+<section class="split" id="source">
   <div class="split-side">
     <h2 class="display-s">Проект</h2>
     <p class="note">Токен хранится в зашифрованном виде; оставьте поле пустым, чтобы не менять его.</p>
   </div>
   <form method="post" action="/projects/{{$p.ID}}/settings" class="form-grid">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
+    {{if $p.SourceLocked}}<p class="note span2" role="status">После импорта источник закреплён за проектом. Для другого репозитория, ветки или проекта Т1 Код <a href="/">создайте отдельный проект</a>. Название и токен можно менять.</p>{{end}}
     <label class="field">Название <input name="name" required maxlength="100" value="{{.Form.Name}}"></label>
-    <label class="field">Адрес Git-репозитория <input class="mono" name="repo_url" required value="{{.Form.RepoURL}}"></label>
-    <label class="field">Ветка <input name="branch" value="{{.Form.Branch}}" placeholder="по умолчанию — основная"></label>
+    <label class="field">Адрес Git-репозитория <input class="mono" name="repo_url" {{if $p.SourceLocked}}readonly{{end}} required value="{{.Form.RepoURL}}"></label>
+    <label class="field">Ветка <input name="branch" {{if $p.SourceLocked}}readonly{{end}} value="{{.Form.Branch}}" placeholder="по умолчанию — основная"></label>
     <label class="field">Новый токен доступа <input type="password" name="token" autocomplete="off" placeholder="{{if $p.HasToken}}сохранён — оставьте пустым{{else}}не задан{{end}}"></label>
     <fieldset class="span2 fieldset">
       <legend>Интеграция с Т1 Код</legend>
       <div class="form-grid form-grid-3">
         <label class="field">Платформа
-          <select name="provider">
+          {{if $p.SourceLocked}}<input type="hidden" name="provider" value="{{$p.Provider}}">{{end}}
+          <select name="provider" {{if $p.SourceLocked}}disabled{{end}}>
             <option value="none" {{if ne .Form.Provider "t1code"}}selected{{end}}>Только Git</option>
             <option value="t1code" {{if eq .Form.Provider "t1code"}}selected{{end}}>Т1 Код / Сфера.Код</option>
           </select>
         </label>
-        <label class="field">Адрес инстанса <input class="mono" name="provider_url" value="{{.Form.ProviderURL}}" placeholder="https://code.example.ru"></label>
-        <label class="field">ID или путь проекта <input class="mono" name="provider_project_id" value="{{.Form.ProviderProjectID}}"></label>
+        <label class="field">Адрес инстанса <input class="mono" name="provider_url" {{if $p.SourceLocked}}readonly{{end}} value="{{.Form.ProviderURL}}" placeholder="https://code.example.ru"></label>
+        <label class="field">ID или путь проекта <input class="mono" name="provider_project_id" {{if $p.SourceLocked}}readonly{{end}} value="{{.Form.ProviderProjectID}}"></label>
       </div>
     </fieldset>
     {{if $p.HasToken}}<label class="check span2"><input type="checkbox" name="clear_token"> Удалить сохранённый токен</label>{{end}}

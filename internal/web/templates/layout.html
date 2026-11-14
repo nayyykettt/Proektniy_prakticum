@@ -13,28 +13,29 @@
 <link rel="stylesheet" href="{{asset "app.css"}}">
 </head>
 <body>
-{{if .User.ID}}
+{{if or .User.ID .Shared}}
 <header class="topbar">
   <div class="wrap topbar-in">
     <a class="brand" href="/">{{template "logo"}}</a>
-    {{with .Project}}
+    {{if not .Shared}}{{with .Project}}
     <nav class="tabs" aria-label="Разделы проекта">
       <span class="crumb">{{.Name}}</span>
-      <a href="/projects/{{.ID}}" {{if eq $.Tab "dashboard"}}aria-current="page"{{end}}>Дашборд</a>
-      <a href="/projects/{{.ID}}/reports" {{if eq $.Tab "reports"}}aria-current="page"{{end}}>Отчёты</a>
+      <a href="{{if $.DashboardURL}}{{$.DashboardURL}}{{else}}/projects/{{.ID}}{{end}}" {{if eq $.Tab "dashboard"}}aria-current="page"{{end}}>Дашборд</a>
+      <a href="{{if $.ReportsURL}}{{$.ReportsURL}}{{else}}/projects/{{.ID}}/reports{{end}}" {{if eq $.Tab "reports"}}aria-current="page"{{end}}>Отчёты</a>
       <a href="/projects/{{.ID}}/settings" {{if eq $.Tab "settings"}}aria-current="page"{{end}}>Настройки</a>
     </nav>
     {{else}}
     <nav class="tabs" aria-label="Разделы"><a href="/" {{if eq $.Title "Проекты"}}aria-current="page"{{end}}>Проекты</a></nav>
     {{end}}
-    <div class="user">
+    {{end}}
+    {{if .User.ID}}<div class="user">
       <span class="user-login" title="Вы вошли как {{.User.Login}}">{{.User.Login}}</span>
       <form method="post" action="/logout"><button class="btn btn-outline">Выйти</button></form>
-    </div>
+    </div>{{end}}
   </div>
 </header>
 {{end}}
-{{if .User.ID}}
+{{if or .User.ID .Shared}}
 <main class="page wrap">
   {{with .Flash}}<div class="alert ok" role="status">{{.}}</div>{{end}}
   {{with .Error}}<div class="alert err" role="alert">{{.}}</div>{{end}}
@@ -43,7 +44,7 @@
 {{else}}
 <main class="bare">{{template "content" .}}</main>
 {{end}}
-{{if .User.ID}}
+{{if or .User.ID .Shared}}
 <footer class="footer">
   <div class="wrap footer-in">
     <span>TeamPulse — автоматическая оценка эффективности команд разработки</span>

@@ -1,31 +1,34 @@
 {{define "content"}}
 {{$p := .Project}}{{$d := .Data}}{{$s := .Data.Snapshot.Summary}}
-{{$action := printf "/projects/%d" $p.ID}}{{if .AuthorView}}{{$action = printf "/projects/%d/authors/%d" $p.ID .AuthorID}}{{end}}
+{{$action := printf "/projects/%d" $p.ID}}{{if .AuthorView}}{{$action = printf "/projects/%d/authors/%d" $p.ID .AuthorID}}{{end}}{{if .Shared}}{{$action = "/shared/contribution"}}{{end}}
 
 <section class="hero">
   <div class="hero-title">
     <div class="crumbs">
-      {{if .AuthorView}}<a href="/projects/{{$p.ID}}?from={{.Filter.From}}&to={{.Filter.To}}">← {{$p.Name}}</a><i>/</i><span>Мой вклад</span>
+      {{if .Shared}}<span>{{$p.Name}}</span><i>/</i><span>Мой вклад · только просмотр</span>
+      {{else if .AuthorView}}<a href="/projects/{{$p.ID}}?from={{.Filter.From}}&to={{.Filter.To}}">← {{$p.Name}}</a><i>/</i><span>Мой вклад</span>
       {{else}}<span>Проект</span><i>/</i><span class="wrap-any">{{$p.RepoURL}}</span>{{with $p.Branch}}<i>/</i><span>{{.}}</span>{{end}}{{end}}
     </div>
     <h1 class="display-xl">{{if .AuthorView}}{{$d.Scope}}{{else}}{{$p.Name}}{{end}}</h1>
   </div>
   <div class="hero-side">
     <p class="lead">{{if not .AuthorView}}{{$d.Scope}} · {{end}}{{date $d.Period.From}} — {{lastDay $d.Period.To}} · сравнение с предыдущим периодом той же длины</p>
-    <div class="hero-actions">
+    {{if not .Shared}}<div class="hero-actions">
       {{if .Running}}<span class="status running">{{template "syncIcon"}}Синхронизация… страница обновится</span>
       {{else}}<span class="status {{$p.SyncStatus}}"><span class="dot"></span>{{status $p.SyncStatus}} <span class="faint">· {{ago $p.LastSyncAt}}</span></span>
-      <form method="post" action="/projects/{{$p.ID}}/sync"><input type="hidden" name="csrf" value="{{.CSRF}}">
+      <form method="post" action="/projects/{{$p.ID}}/sync"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="back" value="{{.CurrentURL}}">
         <button class="btn btn-outline">{{template "syncIcon"}} Синхронизировать</button></form>
       {{end}}
     </div>
-    {{with $p.SyncError}}<p class="sync-err">{{.}}</p>{{end}}
+    {{with $p.SyncError}}<p class="sync-err" role="alert">{{.}} <a href="/projects/{{$p.ID}}/settings#source">Исправить настройки источника</a></p>{{end}}{{end}}
+    {{with .ShareURL}}<p class="note"><a href="{{.}}">Ссылка на карточку без входа</a> · действует 7 дней. Скопируйте адрес ссылки: любой получатель сможет просматривать вклад этого автора.</p>{{end}}
   </div>
 </section>
 
 <form class="filterbar" method="get" action="{{$action}}">
+  {{if .Shared}}<input type="hidden" name="token" value="{{.ShareToken}}">{{end}}
   <div class="seg" role="group" aria-label="Период">
-    {{range .Filter.Presets}}<a href="{{$action}}?days={{.}}{{if $.Filter.TeamID}}&team={{$.Filter.TeamID}}{{end}}" {{if eq . $.Filter.Preset}}aria-current="true"{{end}}>{{.}} дн</a>{{end}}
+    {{range .Filter.Presets}}<a href="{{$action}}?days={{.}}{{if $.Filter.TeamID}}&team={{$.Filter.TeamID}}{{end}}{{if $.Shared}}&token={{$.ShareToken}}{{end}}" {{if eq . $.Filter.Preset}}aria-current="true"{{end}}>{{.}} дн</a>{{end}}
   </div>
   <label class="inline">с <input type="date" name="from" value="{{.Filter.From}}"></label>
   <label class="inline">по <input type="date" name="to" value="{{.Filter.To}}"></label>
@@ -40,8 +43,14 @@
   <button class="btn btn-accent push">Показать</button>
 </form>
 
-{{if and (eq $s.Commits 0) (eq $s.MRMerged 0) (eq $p.SyncStatus "never")}}
-<section class="empty"><p class="empty-title">Данные ещё не загружены</p><p class="muted">Дождитесь окончания первой синхронизации.</p></section>
+{{if and (eq $s.Commits 0) (not .Running)}}
+<section class="empty" role="status">
+  {{if eq $p.SyncStatus "never"}}<p class="empty-title">Данные ещё не загружены</p><p class="muted">Запустите первую синхронизацию.</p>
+  {{else}}<p class="empty-title">За выбранный период коммитов нет</p>
+  {{with .LastCommitAt}}<p class="muted">Последний загруженный коммит в выбранном срезе: {{date .}}. Нулевые метрики относятся к выбранному периоду.</p>
+  <a class="btn btn-outline" href="{{$.DataURL}}">Показать период с данными</a>
+  {{else}}<p class="muted">В выбранном срезе пока нет загруженных коммитов. Проверьте состояние синхронизации и фильтры.</p>{{end}}{{end}}
+</section>
 {{end}}
 
 <section class="kpis" aria-label="Ключевые метрики">

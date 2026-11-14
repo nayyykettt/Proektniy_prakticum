@@ -124,6 +124,10 @@ func TestEndToEnd(t *testing.T) {
 	if got.SyncStatus != domain.SyncPartial || got.SyncError == "" {
 		t.Fatalf("статус проекта: %+v", got)
 	}
+	d, err = a.Analyze(ctx, p.ID, DefaultPeriod(30, now), Scope{})
+	if err != nil || d.Snapshot.Summary.ReviewsGiven != 1 {
+		t.Fatalf("сбой провайдера стёр ревью: %v", err)
+	}
 }
 
 func TestValidation(t *testing.T) {
@@ -170,10 +174,22 @@ func TestSyncFailuresAndLock(t *testing.T) {
 	}
 
 	a.acquire(p2.ID)
+	if _, err := a.UpdateProject(ctx, p2.ID, ProjectInput{Name: "branch", RepoURL: r.Dir}); !errors.Is(err, domain.ErrSyncActive) {
+		t.Fatalf("настройки нельзя менять при синхронизации: %v", err)
+	}
 	if err := a.SyncAsync(p2.ID); !errors.Is(err, domain.ErrSyncActive) {
 		t.Fatalf("повторный запуск должен блокироваться: %v", err)
 	}
 	a.release(p2.ID)
+	if _, err := a.UpdateProject(ctx, p2.ID, ProjectInput{Name: "branch", RepoURL: r.Dir}); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := a.Sync(ctx, p2.ID); err != nil || res.NewCommits != 1 {
+		t.Fatalf("исправление ветки до импорта: %+v %v", res, err)
+	}
+	if _, err := a.UpdateProject(ctx, p2.ID, ProjectInput{Name: "branch", RepoURL: r.Dir, Branch: "other"}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("источник после импорта: %v", err)
+	}
 
 	if _, err := a.Analyze(ctx, p2.ID, domain.Period{From: time.Now(), To: time.Now().Add(-time.Hour)}, Scope{}); !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("from > to: %v", err)

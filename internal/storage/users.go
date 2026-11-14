@@ -10,15 +10,10 @@ import (
 	"teampulse/internal/domain"
 )
 
-// CreateUser регистрирует пользователя. Первый зарегистрированный пользователь
-// получает проекты без владельца, созданные до появления учётных записей.
+// CreateUser регистрирует пользователя без доступа к существующим проектам.
 func (s *Store) CreateUser(ctx context.Context, login, passwordHash string) (domain.User, error) {
 	u := domain.User{Login: login, CreatedAt: time.Now().UTC()}
 	err := s.tx(ctx, func(tx *sql.Tx) error {
-		var users int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&users); err != nil {
-			return err
-		}
 		res, err := tx.ExecContext(ctx, `INSERT INTO users (login, password_hash, created_at) VALUES (?, ?, ?)`,
 			login, passwordHash, unix(u.CreatedAt))
 		if err != nil {
@@ -29,9 +24,6 @@ func (s *Store) CreateUser(ctx context.Context, login, passwordHash string) (dom
 		}
 		if u.ID, err = res.LastInsertId(); err != nil {
 			return err
-		}
-		if users == 0 {
-			_, err = tx.ExecContext(ctx, `UPDATE projects SET owner_id=? WHERE owner_id IS NULL`, u.ID)
 		}
 		return err
 	})

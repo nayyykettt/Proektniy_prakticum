@@ -173,8 +173,8 @@ func ValidateCredentials(login, password, confirm string) error {
 	return nil
 }
 
-// Register создаёт учётную запись. Не выполняет вход: пользователь входит отдельно.
-func (a *Auth) Register(r *http.Request, login, password, confirm string) (domain.User, error) {
+// Register создаёт учётную запись и открывает сессию.
+func (a *Auth) Register(w http.ResponseWriter, r *http.Request, login, password, confirm string) (domain.User, error) {
 	login = strings.TrimSpace(login)
 	if !a.allow("reg:" + clientIP(r)) { // отдельный от входа счётчик
 		return domain.User{}, ErrTooManyAttempts
@@ -186,7 +186,11 @@ func (a *Auth) Register(r *http.Request, login, password, confirm string) (domai
 	if err != nil {
 		return domain.User{}, err
 	}
-	return a.Users.CreateUser(r.Context(), login, hash)
+	u, err := a.Users.CreateUser(r.Context(), login, hash)
+	if err == nil {
+		a.startSession(w, u)
+	}
+	return u, err
 }
 
 // Login проверяет логин и пароль и выставляет cookie сессии.
@@ -208,11 +212,15 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request, login, password str
 		return domain.User{}, ErrBadCredentials
 	}
 	a.reset(ip)
+	a.startSession(w, u)
+	return u, nil
+}
+
+func (a *Auth) startSession(w http.ResponseWriter, u domain.User) {
 	http.SetCookie(w, &http.Cookie{
 		Name: cookieName, Value: a.Box.NewSession(strconv.FormatInt(u.ID, 10), sessionTTL), Path: "/",
 		HttpOnly: true, Secure: a.SecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds()),
 	})
-	return u, nil
 }
 
 // LoggedIn — есть ли у запроса действующая пользовательская сессия (для страниц входа).
