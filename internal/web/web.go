@@ -70,6 +70,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /register", h.registerPage)
 	mux.HandleFunc("POST /register", h.register)
 	mux.HandleFunc("POST /logout", h.logout)
+	mux.HandleFunc("GET /shared/contribution", h.sharedContribution)
 
 	// Каждая страница с {id} или {rid} проверяет, что проект принадлежит пользователю.
 	page := func(pattern string, fn http.HandlerFunc) {
@@ -137,36 +138,25 @@ func (h *Handler) owned(next http.Handler) http.Handler {
 
 // Base — общие данные всех страниц.
 type Base struct {
-	Title   string
-	Accent  string // цвет интерфейса: sky | blue | green
-	User    domain.User
-	CSRF    string
-	Flash   string
-	Error   string
-	Project *domain.Project
-	Tab     string
-	Refresh bool // автообновление страницы во время синхронизации
+	Title        string
+	User         domain.User
+	CSRF         string
+	Flash        string
+	Error        string
+	Project      *domain.Project
+	Tab          string
+	Refresh      bool // автообновление страницы во время синхронизации
+	DashboardURL string
+	ReportsURL   string
+	CurrentURL   string
+	Shared       bool
 }
 
 func (h *Handler) base(r *http.Request, title string) Base {
 	return Base{
-		Title: title, Accent: accentOf(r), User: httpx.User(r),
-		CSRF: h.Auth.CSRFToken(r), Flash: flashes[r.URL.Query().Get("msg")],
+		Title: title, User: httpx.User(r),
+		CSRF: h.Auth.CSRFToken(r), Flash: flashes[r.URL.Query().Get("msg")], CurrentURL: r.URL.RequestURI(),
 	}
-}
-
-// Accents — цвета интерфейса (первый — по умолчанию). Выбор хранится в cookie браузера.
-var Accents = []struct{ ID, Name string }{{"sky", "Голубой"}, {"blue", "Синий"}, {"green", "Зелёный"}}
-
-func accentOf(r *http.Request) string {
-	if c, err := r.Cookie("tp_accent"); err == nil {
-		for _, a := range Accents {
-			if a.ID == c.Value {
-				return a.ID
-			}
-		}
-	}
-	return Accents[0].ID
 }
 
 // Сообщения об успехе передаются кодом, а не текстом — ничего не отражается из URL.
@@ -174,7 +164,7 @@ var flashes = map[string]string{
 	"created": "Проект создан. Запущена первая синхронизация.", "sync": "Синхронизация запущена.",
 	"saved": "Изменения сохранены.", "deleted": "Проект удалён.", "report": "Отчёт сформирован.",
 	"team": "Команда сохранена.", "team_deleted": "Команда удалена.", "merged": "Авторы объединены.",
-	"registered": "Аккаунт создан. Войдите с логином и паролем.",
+	"registered": "Аккаунт создан. Добавьте первый проект.",
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
@@ -225,7 +215,11 @@ func (h *Handler) project(w http.ResponseWriter, r *http.Request) (*domain.Proje
 
 func redirect(w http.ResponseWriter, r *http.Request, path, msg string) {
 	if msg != "" {
-		path += "?msg=" + msg
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		path += sep + "msg=" + msg
 	}
 	http.Redirect(w, r, path, http.StatusSeeOther)
 }
@@ -247,31 +241,52 @@ func (h *Handler) renderAuth(w http.ResponseWriter, r *http.Request, status int,
 	if mode == "register" {
 		title = "Регистрация"
 	}
-	v := authView{Base: Base{Title: title, Accent: accentOf(r), Error: errMsg, Flash: flashes[r.URL.Query().Get("msg")]}, Mode: mode,
+	v := authView{Base: Base{Title: title, Error: errMsg, Flash: flashes[r.URL.Query().Get("msg")]}, Mode: mode,
 		Next: httpx.SafeNext(r.FormValue("next")), Login: login, Cells: decorCells()}
 	v.Rules.MinLogin, v.Rules.MaxLogin = httpx.MinLoginLen, httpx.MaxLoginLen
 	v.Rules.MinPassword, v.Rules.MaxPassword = httpx.MinPasswordLen, httpx.MaxPasswordLen
 	h.render(w, r, status, "login.html", v)
 }
 
-// DecorCell — клетка декоративного узора: уровень 0…5, колонка и строка (для волны подсветки).
-type DecorCell struct{ Level, Col, Row int }
+// DecorCell — клетка декоративной сетки на левой панели входа.
+// Kind: 0 — пустой угол, 1 — фон с бегущей волной, 2 — знак «+1» (дольше держит подсветку).
+// Level 1…6 — базовая яркость; Col и Row задают задержку волны (классы xN и yN в app.css).
+type DecorCell struct{ Kind, Level, Col, Row int }
 
-// decorCells — узор 30×10 уровней 0…5 для левой панели страницы входа.
+// decorCells — сетка 40×24 со знаком «+1» в центре и скруглёнными углами, как в макете «TeamPulse в стиле Т1».
 func decorCells() []DecorCell {
-	cells := make([]DecorCell, 0, 300)
-	for row := range 10 {
-		for c := range 30 {
-			r, cf := float64(row), float64(c)
-			wave := math.Sin(cf/3.1+r/2.2) + math.Sin(cf/1.7-r/3.3)*0.6 + cf/30*1.2
-			bump := 0.0
-			if (row*7+c*3)%5 == 0 {
-				bump = 1
+	const cols, rows = 40, 24
+	cells := make([]DecorCell, 0, cols*rows)
+	for row := range rows {
+		for c := range cols {
+			kind := 1
+			if corner(c, row, cols, rows) {
+				kind = 0
+			} else if inLogo(c, row) {
+				kind = 2
 			}
-			cells = append(cells, DecorCell{Level: max(0, min(5, int(math.Round(wave*1.6+1.4+bump)))), Col: c, Row: row})
+			r, cf := float64(row), float64(c)
+			wave := math.Sin(cf/3.1+r/2.2) + math.Sin(cf/1.7-r/3.3)*0.6
+			cells = append(cells, DecorCell{Kind: kind, Level: max(1, min(6, int(math.Round(wave*1.5+3.5)))), Col: c, Row: row})
 		}
 	}
 	return cells
+}
+
+// corner — клетки, срезанные в углах сетки.
+func corner(c, row, cols, rows int) bool {
+	edge := min(row, rows-1-row)
+	side := min(c, cols-1-c)
+	return (edge <= 2 && side <= 3) || (edge == 3 && side <= 2)
+}
+
+// inLogo — клетки знака «+1»: у «+» вертикаль 4×14 и горизонталь 14×4, у «1» — вертикаль 4×14.
+func inLogo(c, row int) bool {
+	tall := row >= 5 && row <= 18
+	plusV := c >= 15 && c <= 18 && tall
+	plusH := row >= 10 && row <= 13 && c >= 10 && c <= 23
+	one := c >= 26 && c <= 29 && tall
+	return plusV || plusH || one
 }
 
 func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +323,7 @@ func (h *Handler) registerPage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	login := strings.TrimSpace(r.PostFormValue("login"))
-	u, err := h.Auth.Register(r, login, r.PostFormValue("password"), r.PostFormValue("password_confirm"))
+	u, err := h.Auth.Register(w, r, login, r.PostFormValue("password"), r.PostFormValue("password_confirm"))
 	if err != nil {
 		status, msg := httpx.StatusOf(err)
 		if errors.Is(err, httpx.ErrTooManyAttempts) {
@@ -321,7 +336,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.App.Log.Info("зарегистрирован пользователь", "user", u.ID, "login", u.Login)
-	http.Redirect(w, r, "/login?msg=registered&login="+url.QueryEscape(u.Login), http.StatusSeeOther)
+	redirect(w, r, httpx.SafeNext(r.PostFormValue("next")), "registered")
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
@@ -407,6 +422,14 @@ type Filter struct {
 	Presets  []int
 }
 
+func (f Filter) Query() string {
+	q := url.Values{"from": {f.From}, "to": {f.To}}
+	if f.TeamID != 0 {
+		q.Set("team", strconv.FormatInt(f.TeamID, 10))
+	}
+	return q.Encode()
+}
+
 func parseFilter(r *http.Request) (Filter, domain.Period, error) {
 	q := r.URL.Query()
 	f := Filter{Presets: []int{7, 30, 90, 180, 365}}
@@ -475,7 +498,10 @@ type dashboardView struct {
 	Running      bool
 	AuthorView   bool
 	AuthorID     int64
-	TotalCommits int
+	LastCommitAt *time.Time
+	DataURL      string
+	ShareURL     string
+	ShareToken   string
 	WorkStart    int // рамка рабочего дня на тепловой карте
 	WorkEnd      int
 }
@@ -493,7 +519,28 @@ func (h *Handler) author(w http.ResponseWriter, r *http.Request) {
 	h.analysisPage(w, r, aid)
 }
 
+func (h *Handler) sharedContribution(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+	subject, ok := h.App.Box.ParseSession(r.URL.Query().Get("token"))
+	parts := strings.Split(subject, ":")
+	if !ok || len(parts) != 3 || parts[0] != "contribution" {
+		h.errorPage(w, r, http.StatusNotFound, "Ссылка недействительна или истекла. Попросите владельца проекта прислать новую.")
+		return
+	}
+	pid, errP := strconv.ParseInt(parts[1], 10, 64)
+	aid, errA := strconv.ParseInt(parts[2], 10, 64)
+	if errP != nil || errA != nil || pid <= 0 || aid <= 0 {
+		h.fail(w, r, domain.ErrNotFound)
+		return
+	}
+	r.SetPathValue("id", parts[1])
+	h.analysisPage(w, r, aid)
+}
+
 func (h *Handler) analysisPage(w http.ResponseWriter, r *http.Request, authorID int64) {
+	shared := r.URL.Path == "/shared/contribution"
 	p, ok := h.project(w, r)
 	if !ok {
 		return
@@ -512,10 +559,13 @@ func (h *Handler) analysisPage(w http.ResponseWriter, r *http.Request, authorID 
 		h.fail(w, r, err)
 		return
 	}
-	teams, err := h.App.Store.ListTeams(r.Context(), p.ID)
-	if err != nil {
-		h.fail(w, r, err)
-		return
+	var teams []domain.Team
+	if !shared {
+		teams, err = h.App.Store.ListTeams(r.Context(), p.ID)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
 	}
 	v := dashboardView{
 		Base: h.base(r, p.Name), Filter: f, Teams: teams, Data: d, Running: h.App.IsRunning(p.ID),
@@ -523,6 +573,67 @@ func (h *Handler) analysisPage(w http.ResponseWriter, r *http.Request, authorID 
 		WorkStart: h.App.Cfg.WorkdayStart, WorkEnd: h.App.Cfg.WorkdayEnd,
 	}
 	v.Project, v.Tab, v.Refresh = p, "dashboard", v.Running
+	v.DashboardURL = fmt.Sprintf("/projects/%d?%s", p.ID, f.Query())
+	v.ReportsURL = fmt.Sprintf("/projects/%d/reports?%s", p.ID, f.Query())
+	v.Shared = shared
+	if shared {
+		v.ShareToken = r.URL.Query().Get("token")
+		v.Running, v.Refresh = false, false
+	} else if authorID != 0 {
+		w.Header().Set("Cache-Control", "no-store")
+		// shortcut: индивидуального отзыва ссылок нет, добавить хранимые разрешения при необходимости досрочного отзыва.
+		token := h.App.Box.NewSession(fmt.Sprintf("contribution:%d:%d", p.ID, authorID), 7*24*time.Hour)
+		v.ShareURL = "/shared/contribution?" + f.Query() + "&token=" + url.QueryEscape(token)
+	}
+	if d.Snapshot.Summary.Commits == 0 {
+		dates, err := h.App.Store.LastCommitDates(r.Context(), p.ID)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		var members map[int64]bool
+		if f.TeamID != 0 {
+			team, err := h.App.Store.GetTeam(r.Context(), p.ID, f.TeamID)
+			if err != nil {
+				h.fail(w, r, err)
+				return
+			}
+			members = map[int64]bool{}
+			for _, id := range team.MemberIDs {
+				members[id] = true
+			}
+		}
+		authors, err := h.App.Store.ListAuthors(r.Context(), p.ID)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		for _, au := range authors {
+			at, ok := dates[au.ID]
+			if !ok || metrics.IsBot(au) || (authorID != 0 && au.ID != authorID) || (members != nil && !members[au.ID]) {
+				continue
+			}
+			if v.LastCommitAt == nil || at.After(*v.LastCommitAt) {
+				v.LastCommitAt = &at
+			}
+		}
+		if v.LastCommitAt != nil {
+			dataFilter := f
+			dataFilter.From = v.LastCommitAt.AddDate(0, 0, -29).Format("2006-01-02")
+			dataFilter.To = v.LastCommitAt.Format("2006-01-02")
+			action := fmt.Sprintf("/projects/%d", p.ID)
+			if authorID != 0 {
+				action += fmt.Sprintf("/authors/%d", authorID)
+			}
+			if shared {
+				action = "/shared/contribution"
+			}
+			v.DataURL = action + "?" + dataFilter.Query()
+			if shared {
+				v.DataURL += "&token=" + url.QueryEscape(v.ShareToken)
+			}
+		}
+	}
 	if authorID != 0 {
 		v.Title = strings.TrimPrefix(d.Scope, "Разработчик: ") + " — " + p.Name
 	}
@@ -641,7 +752,11 @@ func (h *Handler) reports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, _, _ := parseFilter(r)
+	f, _, err := parseFilter(r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	rs, err := h.App.Store.ListReports(r.Context(), p.ID, 100)
 	if err != nil {
 		h.fail(w, r, err)
@@ -653,6 +768,14 @@ func (h *Handler) reports(w http.ResponseWriter, r *http.Request) {
 		v.TeamMap[t.ID] = t.Name
 	}
 	v.Project, v.Tab = p, "reports"
+	v.DashboardURL = fmt.Sprintf("/projects/%d?%s", p.ID, f.Query())
+	v.ReportsURL = fmt.Sprintf("/projects/%d/reports?%s", p.ID, f.Query())
+	if f.TeamID != 0 {
+		if _, err := h.App.Store.GetTeam(r.Context(), p.ID, f.TeamID); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
 	h.render(w, r, http.StatusOK, "reports.html", v)
 }
 
@@ -671,7 +794,8 @@ func (h *Handler) createReport(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	redirect(w, r, fmt.Sprintf("/projects/%d/reports", p.ID), "report")
+	f := Filter{From: period.From.Format("2006-01-02"), To: period.To.Add(-time.Second).Format("2006-01-02"), TeamID: teamID}
+	redirect(w, r, fmt.Sprintf("/projects/%d/reports?%s", p.ID, f.Query()), "report")
 }
 
 func (h *Handler) report(w http.ResponseWriter, r *http.Request) {

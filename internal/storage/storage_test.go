@@ -42,6 +42,61 @@ func TestProjectCRUD(t *testing.T) {
 	}
 }
 
+func TestImportedProjectKeepsSource(t *testing.T) {
+	ctx := context.Background()
+	for _, activity := range []string{"commit", "mr", "issue", "sha"} {
+		t.Run(activity, func(t *testing.T) {
+			s := newStore(t)
+			p := domain.Project{Name: "source", RepoURL: "repo-a", Branch: "main", Provider: domain.ProviderT1Code,
+				ProviderURL: "https://code.example", ProviderProjectID: "1"}
+			if err := s.CreateProject(ctx, &p); err != nil {
+				t.Fatal(err)
+			}
+			// p прочитан до импорта: защита должна сработать и для устаревшей копии.
+			var err error
+			switch activity {
+			case "commit":
+				err = s.SaveCommits(ctx, p.ID, []domain.Commit{{SHA: "a", AuthorName: "A", AuthoredAt: time.Now()}})
+			case "mr":
+				err = s.SaveMergeRequests(ctx, p.ID, []domain.MergeRequest{{IID: 1, AuthorName: "A", CreatedAt: time.Now()}})
+			case "issue":
+				err = s.SaveIssues(ctx, p.ID, []domain.Issue{{IID: 1, CreatedAt: time.Now()}})
+			case "sha":
+				err = s.SetSyncState(ctx, p.ID, domain.SyncFailed, "", "a")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"url", "branch", "provider", "instance", "project"} {
+				changed := p
+				switch field {
+				case "url":
+					changed.RepoURL = "repo-b"
+				case "branch":
+					changed.Branch = "other"
+				case "provider":
+					changed.Provider = domain.ProviderNone
+				case "instance":
+					changed.ProviderURL = "https://other.example"
+				case "project":
+					changed.ProviderProjectID = "2"
+				}
+				if err := s.UpdateProject(ctx, &changed); !errors.Is(err, domain.ErrConflict) {
+					t.Fatalf("%s: %v", field, err)
+				}
+			}
+			p.Name, p.TokenEnc = "renamed", []byte("new token")
+			if err := s.UpdateProject(ctx, &p); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.GetProject(ctx, p.ID)
+			if err != nil || !got.SourceLocked || got.RepoURL != "repo-a" || got.Name != "renamed" {
+				t.Fatalf("%+v %v", got, err)
+			}
+		})
+	}
+}
+
 func TestAuthorIdentityLinksGitAndProvider(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)

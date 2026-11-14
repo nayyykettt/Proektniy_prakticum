@@ -33,7 +33,6 @@ var funcs = template.FuncMap{
 	"idx2":     func(i int) string { return fmt.Sprintf("%02d", i+1) },
 	"sevLabel": severityLabel,
 	"plural":   plural,
-	"accents":  func() any { return Accents },
 	"asset":    asset,
 	"dir": func(p string) string {
 		if i := strings.LastIndexByte(p, '/'); i >= 0 {

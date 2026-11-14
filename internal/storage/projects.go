@@ -11,15 +11,20 @@ import (
 	"teampulse/internal/domain"
 )
 
+const sourceLockedSQL = `(last_synced_sha <> ''
+	OR EXISTS (SELECT 1 FROM commits WHERE project_id=projects.id)
+	OR EXISTS (SELECT 1 FROM merge_requests WHERE project_id=projects.id)
+	OR EXISTS (SELECT 1 FROM issues WHERE project_id=projects.id))`
+
 const projectCols = `id, owner_id, name, repo_url, branch, provider, provider_url, provider_project_id,
-	token_enc, last_synced_sha, sync_status, sync_error, last_sync_at, created_at`
+	token_enc, last_synced_sha, sync_status, sync_error, last_sync_at, created_at, ` + sourceLockedSQL
 
 func scanProject(row interface{ Scan(...any) error }) (domain.Project, error) {
 	var p domain.Project
 	var lastSync, owner sql.NullInt64
 	var created int64
 	err := row.Scan(&p.ID, &owner, &p.Name, &p.RepoURL, &p.Branch, &p.Provider, &p.ProviderURL,
-		&p.ProviderProjectID, &p.TokenEnc, &p.LastSyncedSHA, &p.SyncStatus, &p.SyncError, &lastSync, &created)
+		&p.ProviderProjectID, &p.TokenEnc, &p.LastSyncedSHA, &p.SyncStatus, &p.SyncError, &lastSync, &created, &p.SourceLocked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, domain.ErrNotFound
 	}
@@ -52,15 +57,24 @@ func (s *Store) CreateProject(ctx context.Context, p *domain.Project) error {
 // UpdateProject сохраняет изменяемые настройки проекта.
 func (s *Store) UpdateProject(ctx context.Context, p *domain.Project) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name=?, repo_url=?, branch=?, provider=?,
-		provider_url=?, provider_project_id=?, token_enc=? WHERE id=?`,
-		p.Name, p.RepoURL, p.Branch, p.Provider, p.ProviderURL, p.ProviderProjectID, p.TokenEnc, p.ID)
+		provider_url=?, provider_project_id=?, token_enc=? WHERE id=? AND (
+		(repo_url=? AND branch=? AND provider=? AND provider_url=? AND provider_project_id=?)
+		OR NOT `+sourceLockedSQL+`)`,
+		p.Name, p.RepoURL, p.Branch, p.Provider, p.ProviderURL, p.ProviderProjectID, p.TokenEnc, p.ID,
+		p.RepoURL, p.Branch, p.Provider, p.ProviderURL, p.ProviderProjectID)
 	if err != nil {
 		if isUnique(err) {
 			return fmt.Errorf("%w: проект с именем %q уже существует", domain.ErrConflict, p.Name)
 		}
 		return err
 	}
-	return mustAffect(res)
+	if err := mustAffect(res); err != nil {
+		if _, getErr := s.GetProject(ctx, p.ID); getErr != nil {
+			return getErr
+		}
+		return fmt.Errorf("%w: после импорта источник менять нельзя; создайте отдельный проект", domain.ErrConflict)
+	}
+	return nil
 }
 
 // GetProject возвращает проект по ID.

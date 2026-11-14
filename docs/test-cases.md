@@ -67,13 +67,13 @@
 
 | ID | Область | Предусловия | Шаги | Ожидаемый результат | Тип | Автотест |
 |---|---|---|---|---|---|---|
-| TC-35 | Вход и роли | Заданы пароли admin и viewer | Войти обеими ролями | viewer видит данные, но не действия admin (403) | auto | internal/server/server_test.go::TestAuthAndRoles |
-| TC-36 | Без авторизации | Пароли заданы | Открыть `/` без входа | Редирект на `/login`; API без токена — 401 | auto | internal/server/server_test.go::TestAuthAndRoles |
-| TC-37 | CSRF | Сессия admin | POST без токена csrf | Отклонено | auto | internal/server/server_test.go::TestAuthAndRoles |
-| TC-38 | Open redirect | — | Вход с `next=//evil.example` | Редирект только на локальный путь | auto | internal/server/server_test.go::TestAuthAndRoles |
+| TC-35 | Изоляция аккаунтов | Два зарегистрированных пользователя | Открыть проект другого пользователя через UI и API | Чужой проект возвращает 404, изменение невозможно | auto | internal/server/server_test.go::TestProjectsIsolatedBetweenUsers |
+| TC-36 | Без авторизации | Нет сессии | Открыть `/` без входа | Редирект на `/login`; API без токена — 401 | auto | internal/server/server_test.go::TestRegistrationAndLogin |
+| TC-37 | CSRF | Сессия владельца | POST без токена csrf | Отклонено | auto | internal/server/server_test.go::TestRegistrationAndLogin |
+| TC-38 | Open redirect | — | Вход с `next=//evil.example` | Редирект только на локальный путь | auto | internal/server/server_test.go::TestRegistrationAndLogin |
 | TC-39 | Сессия и шифрование токенов | — | Создать/проверить сессию; зашифровать и расшифровать токен провайдера | Подпись проверяется, подделка отвергается, round-trip успешен | auto | internal/secure/secure_test.go::TestSession; ::TestEncryptRoundTrip |
-| TC-40 | Заголовки безопасности | Запущен сервис | Проверить ответ (CSP, X-Frame-Options, nosniff, Referrer-Policy) | Заголовки присутствуют | auto | internal/server/server_test.go::TestAuthAndRoles |
-| TC-41 | Конфигурация | Не заданы пароли/секрет; неверные значения | Загрузить конфиг | Значения по умолчанию, секрет генерируется; неверные значения отклонены | auto | internal/config/config_test.go::TestLoadDefaultsAndSecret; ::TestLoadValidation |
+| TC-40 | Заголовки безопасности | Запущен сервис | Проверить ответ (CSP, X-Frame-Options, nosniff, Referrer-Policy) | Заголовки присутствуют | auto | internal/server/server_test.go::TestRegistrationAndLogin |
+| TC-41 | Конфигурация | Не заданы настройки/секрет; неверные значения | Загрузить конфиг | Значения по умолчанию, секрет генерируется; неверные значения отклонены | auto | internal/config/config_test.go::TestLoadDefaultsAndSecret; ::TestLoadValidation |
 
 ## 7. Период, команды, авторы
 
@@ -103,7 +103,7 @@
 
 - [ ] `make lint` и `make test` зелёные (включая `-race`).
 - [ ] `make test-integration` проходит на реальном репозитории.
-- [ ] Свежая установка: пустая БД, миграции применяются, вход admin и viewer работает.
+- [ ] Свежая установка: пустая БД, миграции применяются, регистрация сразу открывает сессию, два аккаунта изолированы.
 - [ ] Добавление проекта: валидные и невалидные URL (TC-07, TC-08).
 - [ ] Первая и повторная синхронизации; пустой репозиторий; неверная ветка (TC-01…TC-06).
 - [ ] Провайдер: корректный токен, неверный токен, недоступный сервер (TC-14…TC-16).
@@ -111,8 +111,20 @@
 - [ ] Значения KPI совпадают с таблицей «Все метрики»; дельты и вердикты корректны.
 - [ ] «Мой вклад» открывается для каждого автора, баллы совпадают с таблицей Zerocracy.
 - [ ] Отчёты: создание вручную и по расписанию; скачивание HTML, MD, CSV, JSON.
-- [ ] Права: viewer не видит кнопок admin и получает 403 на POST; CSRF и open redirect (TC-35…TC-38).
+- [ ] Права: чужой аккаунт получает 404, ссылка просмотра не даёт доступа к управлению; CSRF и open redirect (TC-35…TC-38).
 - [ ] UI: светлая/тёмная тема, ширина 360 px, клавиатурная навигация, пустые состояния.
 - [ ] Объединение авторов и команды: метрики пересчитываются корректно.
 - [ ] Docker-образ собирается, контейнер здоров, данные сохраняются после перезапуска.
 - [ ] README соответствует актуальным командам и переменным окружения.
+
+## Регрессия по ревью от 14 ноября 2026
+
+| Проверка | Ожидаемый результат | Автотест |
+|---|---|---|
+| Смена URL, ветки, провайдера, инстанса или ID после импорта | Отказ 409 даже при устаревшем объекте проекта; название и токен изменяются | `internal/storage/storage_test.go::TestImportedProjectKeepsSource` |
+| Исправление ветки до импорта и изменение во время sync | До импорта разрешено; во время sync отказ | `internal/app/app_test.go::TestSyncFailuresAndLock` |
+| Более 500 MR | У всех 501 MR загружены ревью и diff | `internal/provider/t1code_test.go::TestFetchMoreThan500MergeRequests` |
+| Ошибка провайдера | Уже сохранённые ревью остаются | `internal/app/app_test.go::TestEndToEnd` |
+| Первый аккаунт в базе со старыми проектами | Старые проекты не передаются | `internal/storage/users_test.go::TestUsersAndProjectOwnership` |
+| Период, команда, пустой срез, ошибка ветки | Форма и сохранённый отчёт совпадают со срезом; есть переход к данным и настройкам | `internal/server/server_test.go::TestReviewUserFlows` |
+| Карточка без входа | Видны данные только одного автора; подделка, истёкшая ссылка и cookie-сессия как ссылка отвергаются; API и POST недоступны | `internal/server/server_test.go::TestSharedContribution` |

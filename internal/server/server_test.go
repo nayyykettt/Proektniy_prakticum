@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 
 	"teampulse/internal/app"
 	"teampulse/internal/config"
+	"teampulse/internal/domain"
 	"teampulse/internal/secure"
 	"teampulse/internal/storage"
 	"teampulse/internal/testutil"
@@ -179,7 +181,7 @@ func (u *user) get(path string) (*http.Response, string) {
 	return resp, string(b)
 }
 
-// signup регистрирует пользователя и входит под ним.
+// signup регистрирует пользователя с автоматическим входом.
 func (e *env) signup(t *testing.T, login, password string) *user {
 	t.Helper()
 	u := e.newUser(t)
@@ -187,9 +189,8 @@ func (e *env) signup(t *testing.T, login, password string) *user {
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "Аккаунт создан") {
 		t.Fatalf("регистрация %s: %d %s", login, resp.StatusCode, resp.Request.URL)
 	}
-	resp, _ = u.post("/login", url.Values{"login": {login}, "password": {password}, "next": {"/"}})
-	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/" || u.csrf == "" {
-		t.Fatalf("вход %s: %d %s", login, resp.StatusCode, resp.Request.URL)
+	if resp.Request.URL.Path != "/" || u.csrf == "" {
+		t.Fatalf("автовход %s: %d %s", login, resp.StatusCode, resp.Request.URL)
 	}
 	return u
 }
@@ -241,14 +242,15 @@ func TestRegistrationAndLogin(t *testing.T) {
 		}
 	}
 
-	// Успешная регистрация → страница входа с подставленным логином.
+	// Успешная регистрация сразу открывает проекты и сессию.
 	resp, body := u.post("/register", url.Values{"login": {"alice"}, "password": {"password-1"}, "password_confirm": {"password-1"}})
-	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/login" || !strings.Contains(body, `value="alice"`) {
-		t.Fatalf("после регистрации ожидалась страница входа: %d %s", resp.StatusCode, resp.Request.URL)
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/" || !strings.Contains(body, "Аккаунт создан") {
+		t.Fatalf("после регистрации ожидались проекты: %d %s", resp.StatusCode, resp.Request.URL)
 	}
-	if resp, _ := u.get("/"); resp.Request.URL.Path != "/login" {
-		t.Fatal("регистрация не должна сама выполнять вход")
+	if resp, _ := u.get("/"); resp.Request.URL.Path != "/" {
+		t.Fatal("регистрация должна открыть сессию")
 	}
+	u.post("/logout", url.Values{})
 	resp, body = u.post("/register", url.Values{"login": {"ALICE"}, "password": {"password-1"}, "password_confirm": {"password-1"}})
 	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "уже занят") {
 		t.Fatalf("повторный логин: %d", resp.StatusCode)
@@ -381,7 +383,7 @@ func TestPagesRender(t *testing.T) {
 		fmt.Sprintf("/reports/%d", rep.ID):                 "Отчёт о производительности",
 		"/static/app.css":                                  "--series-1",
 		"/static/auth.js":                                  "password_confirm",
-		"/static/fonts/golos-cyr.woff2":                    "wOF2",
+		"/static/fonts/onest-cyr.woff2":                    "wOF2",
 	}
 	for path, want := range pages {
 		resp, b := c.get(path)
@@ -399,24 +401,144 @@ func TestPagesRender(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("некорректный период: %d", resp.StatusCode)
 	}
-	// Цвет интерфейса: из cookie tp_accent, неизвестное значение — голубой по умолчанию.
-	for accent, want := range map[string]string{"green": "green", "blue": "blue", "evil\"x": "sky", "": "sky"} {
-		req, _ := http.NewRequest("GET", e.srv.URL+"/login", nil)
-		if accent != "" {
-			req.AddCookie(&http.Cookie{Name: "tp_accent", Value: accent})
-		}
-		r, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, _ := io.ReadAll(r.Body)
-		r.Body.Close()
-		if !strings.Contains(string(b), `data-accent="`+want+`"`) || !strings.Contains(string(b), `data-accent-pick="green"`) {
-			t.Errorf("tp_accent=%q: ожидался data-accent=%q", accent, want)
-		}
-	}
 	resp, _ = http.Get(e.srv.URL + "/healthz")
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("healthz: %d", resp.StatusCode)
+	}
+}
+
+func TestReviewUserFlows(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	owner := e.signup(t, "owner", "password-o")
+	u, _, _ := e.app.Store.UserByLogin(ctx, "owner")
+	p, err := e.app.CreateProject(ctx, u.ID, app.ProjectInput{Name: "review", RepoURL: e.repo, Branch: "typo-main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.app.Sync(ctx, p.ID); err == nil {
+		t.Fatal("ожидалась ошибка ветки")
+	}
+	if resp, body := owner.get("/projects/1"); resp.StatusCode != 200 || !strings.Contains(body, `href="/projects/1/settings#source"`) {
+		t.Fatal("нет перехода к исправлению ветки")
+	}
+	_, err = e.app.UpdateProject(ctx, p.ID, app.ProjectInput{Name: "review", RepoURL: e.repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.app.Sync(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	authors, _ := e.app.Store.ListAuthors(ctx, p.ID)
+	team := domain.Team{ProjectID: p.ID, Name: "Backend", MemberIDs: []int64{authors[0].ID}}
+	if err := e.app.Store.SaveTeam(ctx, &team); err != nil {
+		t.Fatal(err)
+	}
+	period := app.DefaultPeriod(90, time.Now())
+	q := url.Values{"from": {period.From.Format("2006-01-02")}, "to": {period.To.Add(-time.Second).Format("2006-01-02")}, "team": {fmt.Sprint(team.ID)}}
+	_, body := owner.get("/projects/1?" + q.Encode())
+	link := regexp.MustCompile(`href="([^"]+)"[^>]*>Отчёты</a>`).FindStringSubmatch(body)
+	if len(link) != 2 {
+		t.Fatal("нет вкладки отчётов")
+	}
+	reportURL, _ := url.Parse(html.UnescapeString(link[1]))
+	if reportURL.Query().Encode() != q.Encode() {
+		t.Fatalf("срез потерян: %s", reportURL)
+	}
+	resp, body := owner.get(reportURL.String())
+	if resp.StatusCode != 200 || !strings.Contains(body, `value="`+q.Get("from")+`"`) || !strings.Contains(body, fmt.Sprintf(`value="%d" selected`, team.ID)) {
+		t.Fatal("форма отчёта потеряла срез")
+	}
+	resp, _ = owner.post("/projects/1/reports", q)
+	if resp.StatusCode != 200 || resp.Request.URL.Query().Get("from") != q.Get("from") || resp.Request.URL.Query().Get("team") != q.Get("team") {
+		t.Fatal("срез потерян после создания отчёта")
+	}
+	reports, _ := e.app.Store.ListReports(ctx, p.ID, 10)
+	if len(reports) != 1 || !reports[0].From.Equal(period.From) || !reports[0].To.Equal(period.To) || reports[0].TeamID != team.ID {
+		t.Fatalf("неверный отчёт: %+v", reports)
+	}
+	if resp, _ := owner.get("/projects/1/reports?from=bad"); resp.StatusCode != 400 {
+		t.Fatalf("неверный период: %d", resp.StatusCode)
+	}
+	resp, body = owner.get("/projects/1?from=2000-01-01&to=2000-01-02&team=" + fmt.Sprint(team.ID))
+	if resp.StatusCode != 200 || !strings.Contains(body, "За выбранный период коммитов нет") || !strings.Contains(body, "Последний загруженный коммит") {
+		t.Fatal("нет пояснения пустого периода")
+	}
+	link = regexp.MustCompile(`href="([^"]+)"[^>]*>Показать период с данными</a>`).FindStringSubmatch(body)
+	if len(link) != 2 {
+		t.Fatal("нет перехода к данным")
+	}
+	resp, body = owner.get(html.UnescapeString(link[1]))
+	if resp.StatusCode != 200 || strings.Contains(body, "За выбранный период коммитов нет") {
+		t.Fatal("переход не показал данные")
+	}
+	resp, body = owner.get("/projects/1/settings")
+	if resp.StatusCode != 200 || !strings.Contains(body, "источник закреплён") {
+		t.Fatal("нет объяснения блокировки источника")
+	}
+	resp, body = e.api(t, "PUT", "/api/projects/1", fmt.Sprintf(`{"name":"review","repo_url":%q,"branch":"other"}`, e.repo))
+	if resp.StatusCode != 409 || !strings.Contains(body, "создайте отдельный проект") {
+		t.Fatalf("API разрешил сменить источник: %d %s", resp.StatusCode, body)
+	}
+}
+
+func TestSharedContribution(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	owner := e.signup(t, "owner", "password-o")
+	u, _, _ := e.app.Store.UserByLogin(ctx, "owner")
+	p, err := e.app.CreateProject(ctx, u.ID, app.ProjectInput{Name: "shared", RepoURL: e.repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.app.Sync(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.app.Store.SaveCommits(ctx, p.ID, []domain.Commit{{SHA: "other", AuthorName: "Private colleague", AuthorEmail: "private@corp", AuthoredAt: time.Now().Add(-time.Hour)}}); err != nil {
+		t.Fatal(err)
+	}
+	authors, _ := e.app.Store.ListAuthors(ctx, p.ID)
+	var aid int64
+	for _, au := range authors {
+		if au.Email == "ivan@corp.ru" {
+			aid = au.ID
+		}
+	}
+	_, body := owner.get(fmt.Sprintf("/projects/%d/authors/%d?days=90", p.ID, aid))
+	link := regexp.MustCompile(`href="([^"]+)"[^>]*>Ссылка на карточку без входа</a>`).FindStringSubmatch(body)
+	if len(link) != 2 {
+		t.Fatal("нет ссылки на карточку")
+	}
+	shareURL := html.UnescapeString(link[1])
+	guest := e.newUser(t)
+	resp, body := guest.get(shareURL + "&aid=999&team=999")
+	if resp.StatusCode != 200 || !strings.Contains(body, "Разработчик: Иван") || !strings.Contains(body, "только просмотр") {
+		t.Fatalf("карточка без входа: %d", resp.StatusCode)
+	}
+	for _, forbidden := range []string{"Private colleague", "private@corp", e.repo, "/settings", "/reports", "/sync", "Ссылка на карточку без входа"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("в карточке раскрыто лишнее: %s", forbidden)
+		}
+	}
+	if resp.Header.Get("Cache-Control") != "no-store" || resp.Header.Get("Referrer-Policy") != "no-referrer" {
+		t.Fatal("нет защиты ссылки от кеширования и referer")
+	}
+	parsed, _ := url.Parse(shareURL)
+	token := parsed.Query().Get("token")
+	if resp, _ := guest.get("/api/projects/1?token=" + url.QueryEscape(token)); resp.StatusCode != 401 {
+		t.Fatal("ссылка дала доступ к API")
+	}
+	if resp, _ := guest.post("/shared/contribution?token="+url.QueryEscape(token), url.Values{}); resp.StatusCode != 405 {
+		t.Fatal("ссылка разрешила запись")
+	}
+	for _, bad := range []string{"", token + "bad", e.app.Box.NewSession(fmt.Sprintf("contribution:%d:%d", p.ID, aid), -time.Minute), e.app.Box.NewSession(fmt.Sprint(u.ID), time.Hour)} {
+		if resp, _ := guest.get("/shared/contribution?token=" + url.QueryEscape(bad)); resp.StatusCode != 404 {
+			t.Fatalf("неверная ссылка принята: %d", resp.StatusCode)
+		}
+	}
+	baseURL, _ := url.Parse(e.srv.URL)
+	guest.c.Jar.SetCookies(baseURL, []*http.Cookie{{Name: "tp_session", Value: token, Path: "/"}})
+	if resp, _ := guest.get("/api/projects"); resp.StatusCode != 401 {
+		t.Fatal("ссылка принята как пользовательская сессия")
 	}
 }

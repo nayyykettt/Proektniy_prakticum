@@ -2,11 +2,13 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -119,6 +121,43 @@ func TestFetchMergeRequests(t *testing.T) {
 	}
 	if mrs[1].Additions != -1 {
 		t.Error("для открытого MR размер не запрашивается")
+	}
+}
+
+func TestFetchMoreThan500MergeRequests(t *testing.T) {
+	var notes atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/merge_requests"):
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			end := min(page*100, 501)
+			if end < 501 {
+				w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
+			}
+			var mrs []apiMR
+			at := time.Now().Add(-time.Hour)
+			for id := (page-1)*100 + 1; id <= end; id++ {
+				mrs = append(mrs, apiMR{IID: id, State: "merged", CreatedAt: at, MergedAt: &at, Author: apiUser{Username: "author"}})
+			}
+			json.NewEncoder(w).Encode(mrs)
+		case strings.HasSuffix(r.URL.Path, "/notes"):
+			notes.Add(1)
+			fmt.Fprint(w, `[{"body":"review","created_at":"2026-01-01T10:00:00Z","author":{"username":"reviewer"}}]`)
+		case strings.HasSuffix(r.URL.Path, "/diffs"):
+			fmt.Fprint(w, `[{"diff":"+line\n"}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	mrs, err := newClient(t, srv.URL, "").FetchMergeRequests(context.Background(), time.Time{})
+	if err != nil || len(mrs) != 501 || notes.Load() != 501 {
+		t.Fatalf("MR=%d notes=%d err=%v", len(mrs), notes.Load(), err)
+	}
+	for _, mr := range mrs {
+		if len(mr.Reviews) != 1 || mr.Additions != 1 {
+			t.Fatalf("детали MR %d потеряны: %+v", mr.IID, mr)
+		}
 	}
 }
 

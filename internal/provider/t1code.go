@@ -20,13 +20,12 @@ import (
 // T1Code — клиент REST API Т1 Код (Сфера.Код). Платформа совместима с GitLab API v4,
 // поэтому клиент работает и с gitlab.com / self-hosted GitLab.
 type T1Code struct {
-	base       string // https://host/api/v4
-	project    string // URL-экранированный ID или путь group/project
-	token      string
-	http       *http.Client
-	maxDetails int           // лимит MR, для которых запрашиваются комментарии и diff
-	workers    int           // параллельные запросы деталей MR
-	backoff    time.Duration // базовая пауза перед повтором
+	base    string // https://host/api/v4
+	project string // URL-экранированный ID или путь group/project
+	token   string
+	http    *http.Client
+	workers int           // параллельные запросы деталей MR
+	backoff time.Duration // базовая пауза перед повтором
 }
 
 // NewT1Code создаёт клиент. baseURL — адрес инстанса (https://code.example.ru).
@@ -40,13 +39,12 @@ func NewT1Code(baseURL, projectID, token string, client *http.Client) (*T1Code, 
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &T1Code{
-		base:       baseURL + "/api/v4",
-		project:    url.PathEscape(strings.Trim(projectID, "/")),
-		token:      token,
-		http:       client,
-		maxDetails: 500,
-		workers:    4,
-		backoff:    time.Second,
+		base:    baseURL + "/api/v4",
+		project: url.PathEscape(strings.Trim(projectID, "/")),
+		token:   token,
+		http:    client,
+		workers: 4,
+		backoff: time.Second,
 	}, nil
 }
 
@@ -128,12 +126,11 @@ func (c *T1Code) FetchMergeRequests(ctx context.Context, since time.Time) ([]dom
 	}
 
 	// Детали — параллельно ограниченным пулом, чтобы не упираться в rate limit.
-	n := min(len(out), c.maxDetails)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstErr error
 	sem := make(chan struct{}, c.workers)
-	for i := range n {
+	for i := range out {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(mr *domain.MergeRequest) {
@@ -318,6 +315,9 @@ func (c *T1Code) paginate(ctx context.Context, path string, q url.Values, fn fun
 			return fmt.Errorf("Т1 Код: неожиданный формат ответа %s: %w", path, err)
 		}
 		page = resp.Header.Get("X-Next-Page")
+	}
+	if page != "" {
+		return fmt.Errorf("Т1 Код: превышен лимит страниц; неполная загрузка не сохранена")
 	}
 	return nil
 }

@@ -143,6 +143,10 @@ func (a *App) CreateProject(ctx context.Context, ownerID int64, in ProjectInput)
 
 // UpdateProject изменяет настройки проекта. Смена репозитория сбрасывает клон.
 func (a *App) UpdateProject(ctx context.Context, id int64, in ProjectInput) (domain.Project, error) {
+	if !a.acquire(id) {
+		return domain.Project{}, domain.ErrSyncActive
+	}
+	defer a.release(id)
 	p, err := a.Store.GetProject(ctx, id)
 	if err != nil {
 		return p, err

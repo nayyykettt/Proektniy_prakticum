@@ -41,6 +41,7 @@ type Project struct {
 	ProviderProjectID string     `json:"provider_project_id,omitempty"`
 	TokenEnc          []byte     `json:"-"` // никогда не сериализуется
 	HasToken          bool       `json:"has_token"`
+	SourceLocked      bool       `json:"source_locked"` // импортированные данные закрепляют источник
 	LastSyncedSHA     string     `json:"last_synced_sha,omitempty"`
 	SyncStatus        string     `json:"sync_status"`
 	SyncError         string     `json:"sync_error,omitempty"`
